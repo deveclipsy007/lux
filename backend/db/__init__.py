@@ -1,2 +1,4 @@
 from .agent_repository import AgentRepository
 from .system_event_repository import SystemEventRepository
+from .whatsapp_instance_repository import WhatsAppInstanceRepository
+from .message_repository import MessageRepository
