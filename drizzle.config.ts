@@ -6,7 +6,7 @@ config({ path: ".env" });
 export default {
   schema: "./database/schema.ts",
   out: "./database/migrations",
-  driver: "better-sqlite3",
+  dialect: "sqlite",
   dbCredentials: {
     url: process.env.DATABASE_URL ?? "sqlite:./data.db",
   },
