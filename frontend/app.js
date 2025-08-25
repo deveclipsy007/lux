@@ -897,6 +897,13 @@ const ApiClient = {
   },
 
   /**
+   * Lista todos os agentes
+   */
+  async listAgents() {
+    return this.request('/api/agents');
+  },
+
+  /**
    * Cria instância do WhatsApp
    */
   async createWhatsAppInstance(instanceData) {
@@ -1004,6 +1011,45 @@ const Navigation = {
 const AgentManager = {
   editingAgentId: null,
   currentAgentId: null,
+  pollingId: null,
+  offlineNotified: false,
+
+  /**
+   * Busca lista de agentes da API ou localStorage
+   */
+  async fetchAgents() {
+    try {
+      const agents = await ApiClient.listAgents();
+      StateManager.updateState('agents', agents);
+      this.offlineNotified = false;
+    } catch (error) {
+      const cached = Storage.load('agents', []);
+      StateManager.updateState('agents', cached);
+      if (!this.offlineNotified) {
+        Toast.warning('Modo Offline', 'Usando agentes salvos localmente');
+        this.offlineNotified = true;
+      }
+    }
+    this.renderAgents();
+  },
+
+  /**
+   * Inicia polling periódico para sincronização
+   */
+  startPolling(interval = 30000) {
+    this.fetchAgents();
+    this.pollingId = setInterval(() => this.fetchAgents(), interval);
+  },
+
+  /**
+   * Interrompe polling
+   */
+  stopPolling() {
+    if (this.pollingId) {
+      clearInterval(this.pollingId);
+      this.pollingId = null;
+    }
+  },
 
   /**
    * Renderiza lista de agentes
@@ -1532,8 +1578,8 @@ const AgentManager = {
 
     try {
       await ApiClient.deleteAgent(agentId);
-      appState.agents = appState.agents.filter(a => a.id !== agentId);
-      StateManager.persistState();
+      const updated = appState.agents.filter(a => a.id !== agentId);
+      StateManager.updateState('agents', updated);
       this.renderAgents();
       Toast.success('Excluído', 'Agente removido com sucesso');
       Logger.log('info', 'frontend', `Agente removido: ${agentId}`);
@@ -2287,10 +2333,10 @@ class EvolutionService:
         status: 'DESCONHECIDO',
         createdAt: new Date()
       };
-      
-      appState.agents.push(newAgent);
-      StateManager.persistState();
-      
+
+      const updatedAgents = [...appState.agents, newAgent];
+      StateManager.updateState('agents', updatedAgents);
+
     } catch (error) {
       Toast.error('Erro na Materialização', error.message);
       Logger.log('error', 'frontend', `Erro ao materializar agente: ${error.message}`);
@@ -2633,6 +2679,7 @@ document.addEventListener('DOMContentLoaded', () => {
   FormManager.init();
   CodeGenerator.init();
   SettingsManager.init();
+  AgentManager.startPolling();
   
   // Configura modais
   document.querySelectorAll('.modal-close, .modal-backdrop').forEach(element => {
@@ -2685,11 +2732,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Simula alguns logs iniciais
   Logger.log('info', 'frontend', 'Aplicação inicializada com sucesso');
   Logger.log('info', 'frontend', `Estado carregado: ${Object.keys(appState.agentDraft).length > 0 ? 'rascunho encontrado' : 'novo agente'}`);
-  
-  // Renderiza agentes mockados
-  setTimeout(() => {
-    AgentManager.renderAgents();
-  }, 100);
   
   console.log('🚀 Agno SDK Agent Generator inicializado');
 });
