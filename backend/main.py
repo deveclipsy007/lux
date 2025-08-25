@@ -49,7 +49,7 @@ from schemas import (
 from services.generator import CodeGeneratorService
 from services.evolution import EvolutionService
 from services.agno import AgnoService
-from models import AgentRepository
+from models import AgentRepository, SystemEvent, EventType, app_store
 
 # WebSocket imports (bypassing problematic modules)
 try:
@@ -110,6 +110,38 @@ settings = Settings()
 
 # Repositório de agentes com persistência simples em disco
 agent_repo = AgentRepository(Path("agents.json"))
+
+# Caminho para persistência de eventos do sistema
+events_file = settings.logs_dir / "events.json"
+
+
+async def log_event(event_type: EventType, agent_id: str, data: Dict[str, Any]) -> None:
+    """Registra evento do sistema em memória e em arquivo."""
+    event = SystemEvent(
+        id="",
+        event_type=event_type,
+        target_id=agent_id,
+        data=data,
+        source="backend",
+    )
+
+    # Armazena em memória
+    await app_store.add_event(event)
+
+    # Persiste em arquivo
+    try:
+        events_file.parent.mkdir(exist_ok=True)
+        existing = (
+            json.loads(events_file.read_text(encoding="utf-8"))
+            if events_file.exists()
+            else []
+        )
+        existing.append(event.to_dict())
+        events_file.write_text(
+            json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    except Exception as e:
+        logger.error(f"Erro ao registrar evento: {e}")
 
 # Configuração de logging
 def setup_logging():
@@ -313,6 +345,7 @@ async def create_agent(agent_in: AgentCreate, current_user: Dict = Depends(get_c
             "integrations": agent_in.integrations.dict(exclude_none=True)
         }
     agent = agent_repo.create_agent(data)
+    await log_event(EventType.AGENT_CREATED, agent.id, agent.to_dict())
     return agent.to_dict()
 
 
@@ -336,6 +369,7 @@ async def update_agent(agent_id: str, agent_in: AgentUpdate, current_user: Dict 
     agent = agent_repo.update_agent(agent_id, update_data)
     if not agent:
         raise HTTPException(status_code=404, detail="Agente não encontrado")
+    await log_event(EventType.AGENT_UPDATED, agent_id, agent.to_dict())
     return agent.to_dict()
 
 
@@ -398,9 +432,18 @@ async def delete_agent(
 
     if not agent_repo.delete_agent(agent_id):
         raise HTTPException(status_code=404, detail="Agente não encontrado")
-
+    await log_event(EventType.AGENT_DELETED, agent_id, {"name": agent.name})
     logger.info(f"Agente {agent.name} removido com sucesso")
     return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
+
+# ENDPOINTS DE AUDITORIA
+
+@app.get("/api/events", response_model=List[Dict[str, Any]])
+async def get_events(current_user: Dict = Depends(get_current_user)):
+    """Retorna eventos do sistema para auditoria."""
+    if events_file.exists():
+        return json.loads(events_file.read_text(encoding="utf-8"))
+    return []
 
 # ENDPOINTS DE AGENTES
 
