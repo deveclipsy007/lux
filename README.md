@@ -106,6 +106,18 @@ cd backend
 uvicorn main:app --reload --port 8000
 ```
 
+#### Banco de Dados
+
+Por padrão o projeto usa SQLite. Para migrar para PostgreSQL:
+
+```bash
+export DB_PROVIDER=postgres
+export DATABASE_URL=postgres://usuario:senha@localhost:5432/lux
+npm run migrate
+```
+
+Retire as variáveis para voltar ao SQLite.
+
 ### 3. Frontend Setup
 
 ```bash
