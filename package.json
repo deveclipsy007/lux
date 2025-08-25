@@ -20,6 +20,7 @@
     "pg": "^8.11.3"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.31.4"
+    "drizzle-kit": "^0.31.4",
+    "tsx": "^4.7.0"
   }
 }

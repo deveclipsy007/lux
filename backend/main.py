@@ -51,7 +51,7 @@ from services.generator import CodeGeneratorService
 from services.evolution import EvolutionService
 from services.agno import AgnoService
 from models import SystemEvent, EventType, app_store
-from db.agent_repo import AgentRepository
+from db import AgentRepository
 
 # WebSocket imports (bypassing problematic modules)
 try:
