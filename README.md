@@ -125,9 +125,19 @@ python -m http.server 5500
 ### 4. Acesso à Aplicação
 
 - **Frontend**: http://localhost:5500
-- **Backend API**: http://localhost:8000  
+- **Backend API**: http://localhost:8000
 - **Documentação**: http://localhost:8000/docs
 - **Health Check**: http://localhost:8000/api/health
+
+---
+
+### 🔑 Token de Acesso
+
+O backend exige autenticação via header `Authorization: Bearer <TOKEN>`.
+
+- Defina o token através da variável de ambiente `API_SECRET`.
+- No frontend, informe o token em **Configurações → Conexões → API Access Token**.
+- Requisições sem token válido retornam `401 Unauthorized`.
 
 ---
 
