@@ -1,0 +1,22 @@
+{
+  "name": "lux",
+  "version": "1.0.0",
+  "description": "> **Gerador completo de agentes SDK** com interface iOS dark e backend Python para criação de agentes inteligentes integrados ao WhatsApp via Evolution API.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"No tests specified\" && exit 0",
+    "drizzle": "drizzle-kit generate"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "dotenv": "^17.2.1",
+    "drizzle-orm": "^0.44.5"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.4"
+  }
+}
