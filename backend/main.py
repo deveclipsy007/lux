@@ -51,7 +51,7 @@ from services.generator import CodeGeneratorService
 from services.evolution import EvolutionService
 from services.agno import AgnoService
 from models import SystemEvent, EventType, app_store
-from db import AgentRepository
+from db import AgentRepository, SystemEventRepository
 
 # WebSocket imports (bypassing problematic modules)
 try:
@@ -101,19 +101,17 @@ class Settings(BaseSettings):
 # Instância global das configurações
 settings = Settings()
 
-# Repositório de agentes com persistência em banco de dados
+# Repositórios com persistência em banco de dados
 agent_repo = AgentRepository()
-
-# Caminho para persistência de eventos do sistema
-events_file = settings.logs_dir / "events.json"
+event_repo = SystemEventRepository()
 
 
 async def log_event(event_type: EventType, agent_id: str, data: Dict[str, Any]) -> None:
-    """Registra evento do sistema em memória e em arquivo."""
+    """Registra evento do sistema em memória e no banco de dados."""
     event = SystemEvent(
         id="",
         event_type=event_type,
-        target_id=agent_id,
+        agent_id=agent_id,
         data=data,
         source="backend",
     )
@@ -121,18 +119,9 @@ async def log_event(event_type: EventType, agent_id: str, data: Dict[str, Any]) 
     # Armazena em memória
     await app_store.add_event(event)
 
-    # Persiste em arquivo
+    # Persiste no banco de dados
     try:
-        events_file.parent.mkdir(exist_ok=True)
-        existing = (
-            json.loads(events_file.read_text(encoding="utf-8"))
-            if events_file.exists()
-            else []
-        )
-        existing.append(event.to_dict())
-        events_file.write_text(
-            json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        await event_repo.log_event(event)
     except Exception as e:
         logger.error(f"Erro ao registrar evento: {e}")
 
@@ -188,8 +177,9 @@ async def lifespan(app: FastAPI):
     settings.generated_agents_dir.mkdir(exist_ok=True)
     logger.info(f"Diretório de agentes criado: {settings.generated_agents_dir}")
 
-    # Inicializa repositório de agentes
+    # Inicializa repositórios
     await agent_repo.init()
+    await event_repo.init()
     agents = await agent_repo.list_agents()
     logger.info(f"{len(agents)} agentes carregados do banco")
     
@@ -435,9 +425,7 @@ async def delete_agent(
 @app.get("/api/events", response_model=List[Dict[str, Any]])
 async def get_events(current_user: Dict = Depends(get_current_user)):
     """Retorna eventos do sistema para auditoria."""
-    if events_file.exists():
-        return json.loads(events_file.read_text(encoding="utf-8"))
-    return []
+    return await event_repo.list_events()
 
 # ENDPOINTS DE AGENTES
 

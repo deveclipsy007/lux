@@ -37,13 +37,16 @@ CREATE TABLE `messages` (
 CREATE INDEX `idx_messages_instance` ON `messages` (`instance_id`);--> statement-breakpoint
 CREATE INDEX `idx_messages_agent` ON `messages` (`agent_id`);--> statement-breakpoint
 CREATE TABLE `system_events` (
-	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`event_type` text NOT NULL,
-	`source` text,
-	`target_id` integer,
-	`data` text,
-	`created_at` integer DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	`updated_at` integer DEFAULT CURRENT_TIMESTAMP NOT NULL
+        `id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+        `event_type` text NOT NULL,
+        `source` text,
+        `agent_id` integer,
+        `instance_id` integer,
+        `data` text,
+        `created_at` integer DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        `updated_at` integer DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        FOREIGN KEY (`agent_id`) REFERENCES `agents`(`id`) ON UPDATE no action ON DELETE set null,
+        FOREIGN KEY (`instance_id`) REFERENCES `whatsapp_instances`(`id`) ON UPDATE no action ON DELETE set null
 );
 --> statement-breakpoint
 CREATE INDEX `idx_system_events_type` ON `system_events` (`event_type`);--> statement-breakpoint
