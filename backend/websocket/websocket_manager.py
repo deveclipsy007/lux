@@ -1,1 +1,585 @@
-"""\nGerenciador de WebSockets para Evolution API\n\nImplementa:\n- Gerenciamento de conexões\n- Broadcasting de eventos\n- Autenticação de WebSocket\n- Rate limiting\n- Reconexão automática\n- Monitoramento de saúde\n\nAutor: AgnoMaster - Evolution API WebSocket Expert\nData: 2025-01-24\n"""\n\nimport json\nimport asyncio\nimport time\nfrom datetime import datetime, timezone, timedelta\nfrom typing import Dict, List, Set, Optional, Any, Callable\nfrom dataclasses import dataclass, field\nfrom enum import Enum\nfrom collections import defaultdict\nimport uuid\n\nfrom fastapi import WebSocket, WebSocketDisconnect, status\nfrom loguru import logger\nimport redis.asyncio as redis\n\nfrom .websocket_events import EventType, WebSocketEvent\nfrom .websocket_auth import WebSocketAuthenticator\nfrom ..auth.jwt_auth import User\n\n\nclass ConnectionState(str, Enum):\n    \"\"\"Estados de conexão WebSocket\"\"\"\n    CONNECTING = \"connecting\"\n    CONNECTED = \"connected\"\n    AUTHENTICATED = \"authenticated\"\n    DISCONNECTING = \"disconnecting\"\n    DISCONNECTED = \"disconnected\"\n    ERROR = \"error\"\n\n\nclass SubscriptionType(str, Enum):\n    \"\"\"Tipos de subscrição\"\"\"\n    ALL = \"all\"\n    INSTANCE_STATUS = \"instance_status\"\n    MESSAGES = \"messages\"\n    AGENT_EVENTS = \"agent_events\"\n    SYSTEM_EVENTS = \"system_events\"\n    USER_EVENTS = \"user_events\"\n\n\n@dataclass\nclass WebSocketConnection:\n    \"\"\"Representa uma conexão WebSocket\"\"\"\n    id: str\n    websocket: WebSocket\n    user: Optional[User] = None\n    state: ConnectionState = ConnectionState.CONNECTING\n    connected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))\n    last_ping: Optional[datetime] = None\n    last_pong: Optional[datetime] = None\n    subscriptions: Set[SubscriptionType] = field(default_factory=set)\n    metadata: Dict[str, Any] = field(default_factory=dict)\n    message_count: int = 0\n    error_count: int = 0\n    \n    @property\n    def is_authenticated(self) -> bool:\n        return self.state == ConnectionState.AUTHENTICATED and self.user is not None\n    \n    @property\n    def is_alive(self) -> bool:\n        return self.state in [ConnectionState.CONNECTED, ConnectionState.AUTHENTICATED]\n    \n    @property\n    def connection_duration(self) -> timedelta:\n        return datetime.now(timezone.utc) - self.connected_at\n    \n    def to_dict(self) -> Dict[str, Any]:\n        return {\n            \"id\": self.id,\n            \"user_id\": self.user.id if self.user else None,\n            \"username\": self.user.username if self.user else None,\n            \"state\": self.state.value,\n            \"connected_at\": self.connected_at.isoformat(),\n            \"last_ping\": self.last_ping.isoformat() if self.last_ping else None,\n            \"last_pong\": self.last_pong.isoformat() if self.last_pong else None,\n            \"subscriptions\": list(self.subscriptions),\n            \"message_count\": self.message_count,\n            \"error_count\": self.error_count,\n            \"connection_duration_seconds\": self.connection_duration.total_seconds(),\n            \"metadata\": self.metadata\n        }\n\n\nclass ConnectionManager:\n    \"\"\"\n    Gerenciador de conexões WebSocket\n    \"\"\"\n    \n    def __init__(self, redis_client: Optional[redis.Redis] = None):\n        self.connections: Dict[str, WebSocketConnection] = {}\n        self.user_connections: Dict[str, Set[str]] = defaultdict(set)\n        self.subscription_connections: Dict[SubscriptionType, Set[str]] = defaultdict(set)\n        self.redis_client = redis_client\n        \n        # Estatísticas\n        self.total_connections = 0\n        self.total_messages = 0\n        self.start_time = datetime.now(timezone.utc)\n        \n        # Tasks\n        self._heartbeat_task = None\n        self._cleanup_task = None\n        self._stats_task = None\n        \n        self._start_background_tasks()\n        \n        logger.info(\"🔌 ConnectionManager inicializado\")\n    \n    async def connect(self, websocket: WebSocket, connection_id: Optional[str] = None) -> WebSocketConnection:\n        \"\"\"Aceita uma nova conexão WebSocket\"\"\"\n        await websocket.accept()\n        \n        if not connection_id:\n            connection_id = str(uuid.uuid4())\n        \n        connection = WebSocketConnection(\n            id=connection_id,\n            websocket=websocket,\n            state=ConnectionState.CONNECTED\n        )\n        \n        self.connections[connection_id] = connection\n        self.total_connections += 1\n        \n        logger.info(f\"🔌 Nova conexão WebSocket: {connection_id}\")\n        \n        # Envia mensagem de boas-vindas\n        await self.send_to_connection(connection_id, WebSocketEvent(\n            type=EventType.CONNECTION_ESTABLISHED,\n            data={\n                \"connection_id\": connection_id,\n                \"timestamp\": datetime.now(timezone.utc).isoformat(),\n                \"message\": \"Conexão estabelecida com sucesso\"\n            }\n        ))\n        \n        return connection\n    \n    async def disconnect(self, connection_id: str, code: int = 1000, reason: str = \"Normal closure\"):\n        \"\"\"Desconecta uma conexão WebSocket\"\"\"\n        if connection_id not in self.connections:\n            return\n        \n        connection = self.connections[connection_id]\n        connection.state = ConnectionState.DISCONNECTING\n        \n        try:\n            await connection.websocket.close(code=code, reason=reason)\n        except Exception as e:\n            logger.warning(f\"Erro ao fechar WebSocket {connection_id}: {e}\")\n        \n        # Remove das estruturas de dados\n        if connection.user:\n            self.user_connections[connection.user.id].discard(connection_id)\n            if not self.user_connections[connection.user.id]:\n                del self.user_connections[connection.user.id]\n        \n        for subscription in connection.subscriptions:\n            self.subscription_connections[subscription].discard(connection_id)\n        \n        connection.state = ConnectionState.DISCONNECTED\n        del self.connections[connection_id]\n        \n        logger.info(f\"🔌 Conexão WebSocket desconectada: {connection_id} ({reason})\")\n    \n    async def authenticate_connection(self, connection_id: str, user: User):\n        \"\"\"Autentica uma conexão\"\"\"\n        if connection_id not in self.connections:\n            raise ValueError(f\"Conexão {connection_id} não encontrada\")\n        \n        connection = self.connections[connection_id]\n        connection.user = user\n        connection.state = ConnectionState.AUTHENTICATED\n        \n        # Adiciona à lista de conexões do usuário\n        self.user_connections[user.id].add(connection_id)\n        \n        logger.info(f\"🔐 Conexão autenticada: {connection_id} (usuário: {user.username})\")\n        \n        # Envia confirmação de autenticação\n        await self.send_to_connection(connection_id, WebSocketEvent(\n            type=EventType.AUTHENTICATION_SUCCESS,\n            data={\n                \"user_id\": user.id,\n                \"username\": user.username,\n                \"timestamp\": datetime.now(timezone.utc).isoformat()\n            }\n        ))\n    \n    async def subscribe(self, connection_id: str, subscription_type: SubscriptionType):\n        \"\"\"Adiciona uma subscrição\"\"\"\n        if connection_id not in self.connections:\n            raise ValueError(f\"Conexão {connection_id} não encontrada\")\n        \n        connection = self.connections[connection_id]\n        connection.subscriptions.add(subscription_type)\n        self.subscription_connections[subscription_type].add(connection_id)\n        \n        logger.debug(f\"📡 Subscrição adicionada: {connection_id} -> {subscription_type.value}\")\n        \n        # Confirma subscrição\n        await self.send_to_connection(connection_id, WebSocketEvent(\n            type=EventType.SUBSCRIPTION_CONFIRMED,\n            data={\n                \"subscription_type\": subscription_type.value,\n                \"timestamp\": datetime.now(timezone.utc).isoformat()\n            }\n        ))\n    \n    async def unsubscribe(self, connection_id: str, subscription_type: SubscriptionType):\n        \"\"\"Remove uma subscrição\"\"\"\n        if connection_id not in self.connections:\n            return\n        \n        connection = self.connections[connection_id]\n        connection.subscriptions.discard(subscription_type)\n        self.subscription_connections[subscription_type].discard(connection_id)\n        \n        logger.debug(f\"📡 Subscrição removida: {connection_id} -> {subscription_type.value}\")\n    \n    async def send_to_connection(self, connection_id: str, event: WebSocketEvent) -> bool:\n        \"\"\"Envia um evento para uma conexão específica\"\"\"\n        if connection_id not in self.connections:\n            return False\n        \n        connection = self.connections[connection_id]\n        \n        if not connection.is_alive:\n            return False\n        \n        try:\n            message = json.dumps(event.to_dict())\n            await connection.websocket.send_text(message)\n            connection.message_count += 1\n            self.total_messages += 1\n            return True\n        except Exception as e:\n            logger.error(f\"Erro ao enviar mensagem para {connection_id}: {e}\")\n            connection.error_count += 1\n            await self.disconnect(connection_id, code=1011, reason=\"Send error\")\n            return False\n    \n    async def send_to_user(self, user_id: str, event: WebSocketEvent) -> int:\n        \"\"\"Envia um evento para todas as conexões de um usuário\"\"\"\n        if user_id not in self.user_connections:\n            return 0\n        \n        sent_count = 0\n        connection_ids = list(self.user_connections[user_id])\n        \n        for connection_id in connection_ids:\n            if await self.send_to_connection(connection_id, event):\n                sent_count += 1\n        \n        return sent_count\n    \n    async def broadcast_to_subscription(self, subscription_type: SubscriptionType, event: WebSocketEvent) -> int:\n        \"\"\"Faz broadcast para todas as conexões de uma subscrição\"\"\"\n        if subscription_type not in self.subscription_connections:\n            return 0\n        \n        sent_count = 0\n        connection_ids = list(self.subscription_connections[subscription_type])\n        \n        for connection_id in connection_ids:\n            if await self.send_to_connection(connection_id, event):\n                sent_count += 1\n        \n        return sent_count\n    \n    async def broadcast_to_all(self, event: WebSocketEvent) -> int:\n        \"\"\"Faz broadcast para todas as conexões\"\"\"\n        sent_count = 0\n        connection_ids = list(self.connections.keys())\n        \n        for connection_id in connection_ids:\n            if await self.send_to_connection(connection_id, event):\n                sent_count += 1\n        \n        return sent_count\n    \n    async def handle_ping(self, connection_id: str):\n        \"\"\"Trata ping de uma conexão\"\"\"\n        if connection_id not in self.connections:\n            return\n        \n        connection = self.connections[connection_id]\n        connection.last_ping = datetime.now(timezone.utc)\n        \n        # Responde com pong\n        await self.send_to_connection(connection_id, WebSocketEvent(\n            type=EventType.PONG,\n            data={\"timestamp\": connection.last_ping.isoformat()}\n        ))\n    \n    async def handle_pong(self, connection_id: str):\n        \"\"\"Trata pong de uma conexão\"\"\"\n        if connection_id not in self.connections:\n            return\n        \n        connection = self.connections[connection_id]\n        connection.last_pong = datetime.now(timezone.utc)\n    \n    def get_connection_stats(self) -> Dict[str, Any]:\n        \"\"\"Retorna estatísticas das conexões\"\"\"\n        active_connections = len(self.connections)\n        authenticated_connections = sum(1 for conn in self.connections.values() if conn.is_authenticated)\n        \n        return {\n            \"active_connections\": active_connections,\n            \"authenticated_connections\": authenticated_connections,\n            \"total_connections\": self.total_connections,\n            \"total_messages\": self.total_messages,\n            \"uptime_seconds\": (datetime.now(timezone.utc) - self.start_time).total_seconds(),\n            \"connections_by_subscription\": {\n                sub_type.value: len(connections)\n                for sub_type, connections in self.subscription_connections.items()\n            },\n            \"connections_by_user\": {\n                user_id: len(connections)\n                for user_id, connections in self.user_connections.items()\n            }\n        }\n    \n    def get_connection_info(self, connection_id: str) -> Optional[Dict[str, Any]]:\n        \"\"\"Retorna informações de uma conexão\"\"\"\n        if connection_id not in self.connections:\n            return None\n        \n        return self.connections[connection_id].to_dict()\n    \n    def list_connections(self) -> List[Dict[str, Any]]:\n        \"\"\"Lista todas as conexões\"\"\"\n        return [conn.to_dict() for conn in self.connections.values()]\n    \n    def _start_background_tasks(self):\n        \"\"\"Inicia tasks em background\"\"\"\n        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())\n        self._cleanup_task = asyncio.create_task(self._cleanup_loop())\n        self._stats_task = asyncio.create_task(self._stats_loop())\n    \n    async def _heartbeat_loop(self):\n        \"\"\"Loop de heartbeat para verificar conexões\"\"\"\n        while True:\n            try:\n                await asyncio.sleep(30)  # Heartbeat a cada 30 segundos\n                await self._send_heartbeat()\n            except Exception as e:\n                logger.error(f\"Erro no heartbeat: {e}\")\n    \n    async def _send_heartbeat(self):\n        \"\"\"Envia heartbeat para todas as conexões\"\"\"\n        now = datetime.now(timezone.utc)\n        stale_connections = []\n        \n        for connection_id, connection in self.connections.items():\n            # Verifica se a conexão está \"morta\"\n            if connection.last_pong:\n                time_since_pong = now - connection.last_pong\n                if time_since_pong > timedelta(minutes=2):\n                    stale_connections.append(connection_id)\n                    continue\n            \n            # Envia ping\n            await self.send_to_connection(connection_id, WebSocketEvent(\n                type=EventType.PING,\n                data={\"timestamp\": now.isoformat()}\n            ))\n        \n        # Remove conexões \"mortas\"\n        for connection_id in stale_connections:\n            logger.warning(f\"Removendo conexão inativa: {connection_id}\")\n            await self.disconnect(connection_id, code=1001, reason=\"Connection timeout\")\n    \n    async def _cleanup_loop(self):\n        \"\"\"Loop de limpeza\"\"\"\n        while True:\n            try:\n                await asyncio.sleep(300)  # Limpeza a cada 5 minutos\n                await self._cleanup_connections()\n            except Exception as e:\n                logger.error(f\"Erro na limpeza: {e}\")\n    \n    async def _cleanup_connections(self):\n        \"\"\"Limpa conexões órfãs\"\"\"\n        orphaned_connections = []\n        \n        for connection_id, connection in self.connections.items():\n            try:\n                # Tenta enviar uma mensagem de teste\n                await connection.websocket.ping()\n            except Exception:\n                orphaned_connections.append(connection_id)\n        \n        for connection_id in orphaned_connections:\n            logger.warning(f\"Removendo conexão órfã: {connection_id}\")\n            await self.disconnect(connection_id, code=1011, reason=\"Connection lost\")\n    \n    async def _stats_loop(self):\n        \"\"\"Loop de estatísticas\"\"\"\n        while True:\n            try:\n                await asyncio.sleep(60)  # Estatísticas a cada minuto\n                stats = self.get_connection_stats()\n                logger.info(f\"📊 WebSocket Stats: {stats['active_connections']} ativas, {stats['total_messages']} mensagens\")\n                \n                # Salva no Redis se disponível\n                if self.redis_client:\n                    await self.redis_client.setex(\n                        \"websocket_stats\",\n                        300,  # 5 minutos\n                        json.dumps(stats)\n                    )\n            except Exception as e:\n                logger.error(f\"Erro nas estatísticas: {e}\")\n\n\nclass WebSocketManager:\n    \"\"\"\n    Gerenciador principal de WebSockets\n    \"\"\"\n    \n    def __init__(self, redis_client: Optional[redis.Redis] = None):\n        self.connection_manager = ConnectionManager(redis_client)\n        self.authenticator = WebSocketAuthenticator()\n        self.redis_client = redis_client\n        \n        # Event handlers\n        self.event_handlers: Dict[EventType, List[Callable]] = defaultdict(list)\n        \n        logger.info(\"🚀 WebSocketManager inicializado\")\n    \n    async def handle_websocket(self, websocket: WebSocket, connection_id: Optional[str] = None):\n        \"\"\"Trata uma nova conexão WebSocket\"\"\"\n        connection = await self.connection_manager.connect(websocket, connection_id)\n        \n        try:\n            while True:\n                # Recebe mensagem\n                data = await websocket.receive_text()\n                await self._handle_message(connection.id, data)\n        \n        except WebSocketDisconnect:\n            logger.info(f\"Cliente desconectado: {connection.id}\")\n        except Exception as e:\n            logger.error(f\"Erro na conexão WebSocket {connection.id}: {e}\")\n        finally:\n            await self.connection_manager.disconnect(connection.id)\n    \n    async def _handle_message(self, connection_id: str, message: str):\n        \"\"\"Trata uma mensagem recebida\"\"\"\n        try:\n            data = json.loads(message)\n            event_type = EventType(data.get('type'))\n            event_data = data.get('data', {})\n            \n            # Cria evento\n            event = WebSocketEvent(\n                type=event_type,\n                data=event_data,\n                connection_id=connection_id\n            )\n            \n            # Trata evento\n            await self._process_event(event)\n            \n        except json.JSONDecodeError:\n            logger.warning(f\"Mensagem JSON inválida de {connection_id}: {message}\")\n        except ValueError as e:\n            logger.warning(f\"Tipo de evento inválido de {connection_id}: {e}\")\n        except Exception as e:\n            logger.error(f\"Erro ao processar mensagem de {connection_id}: {e}\")\n    \n    async def _process_event(self, event: WebSocketEvent):\n        \"\"\"Processa um evento\"\"\"\n        # Eventos do sistema\n        if event.type == EventType.AUTHENTICATE:\n            await self._handle_authenticate(event)\n        elif event.type == EventType.SUBSCRIBE:\n            await self._handle_subscribe(event)\n        elif event.type == EventType.UNSUBSCRIBE:\n            await self._handle_unsubscribe(event)\n        elif event.type == EventType.PING:\n            await self.connection_manager.handle_ping(event.connection_id)\n        elif event.type == EventType.PONG:\n            await self.connection_manager.handle_pong(event.connection_id)\n        \n        # Chama handlers customizados\n        for handler in self.event_handlers.get(event.type, []):\n            try:\n                await handler(event)\n            except Exception as e:\n                logger.error(f\"Erro no handler de evento {event.type}: {e}\")\n    \n    async def _handle_authenticate(self, event: WebSocketEvent):\n        \"\"\"Trata autenticação\"\"\"\n        token = event.data.get('token')\n        if not token:\n            await self.connection_manager.send_to_connection(\n                event.connection_id,\n                WebSocketEvent(\n                    type=EventType.AUTHENTICATION_FAILED,\n                    data={\"error\": \"Token não fornecido\"}\n                )\n            )\n            return\n        \n        try:\n            user = await self.authenticator.authenticate(token)\n            await self.connection_manager.authenticate_connection(event.connection_id, user)\n        except Exception as e:\n            await self.connection_manager.send_to_connection(\n                event.connection_id,\n                WebSocketEvent(\n                    type=EventType.AUTHENTICATION_FAILED,\n                    data={\"error\": str(e)}\n                )\n            )\n    \n    async def _handle_subscribe(self, event: WebSocketEvent):\n        \"\"\"Trata subscrição\"\"\"\n        subscription_type = event.data.get('subscription_type')\n        if not subscription_type:\n            return\n        \n        try:\n            sub_type = SubscriptionType(subscription_type)\n            await self.connection_manager.subscribe(event.connection_id, sub_type)\n        except ValueError:\n            logger.warning(f\"Tipo de subscrição inválido: {subscription_type}\")\n    \n    async def _handle_unsubscribe(self, event: WebSocketEvent):\n        \"\"\"Trata cancelamento de subscrição\"\"\"\n        subscription_type = event.data.get('subscription_type')\n        if not subscription_type:\n            return\n        \n        try:\n            sub_type = SubscriptionType(subscription_type)\n            await self.connection_manager.unsubscribe(event.connection_id, sub_type)\n        except ValueError:\n            logger.warning(f\"Tipo de subscrição inválido: {subscription_type}\")\n    \n    def add_event_handler(self, event_type: EventType, handler: Callable):\n        \"\"\"Adiciona um handler de evento\"\"\"\n        self.event_handlers[event_type].append(handler)\n    \n    def remove_event_handler(self, event_type: EventType, handler: Callable):\n        \"\"\"Remove um handler de evento\"\"\"\n        if handler in self.event_handlers[event_type]:\n            self.event_handlers[event_type].remove(handler)\n    \n    async def broadcast_event(self, event: WebSocketEvent, subscription_type: Optional[SubscriptionType] = None):\n        \"\"\"Faz broadcast de um evento\"\"\"\n        if subscription_type:\n            return await self.connection_manager.broadcast_to_subscription(subscription_type, event)\n        else:\n            return await self.connection_manager.broadcast_to_all(event)\n    \n    async def send_to_user(self, user_id: str, event: WebSocketEvent):\n        \"\"\"Envia evento para um usuário específico\"\"\"\n        return await self.connection_manager.send_to_user(user_id, event)\n    \n    def get_stats(self) -> Dict[str, Any]:\n        \"\"\"Retorna estatísticas\"\"\"\n        return self.connection_manager.get_connection_stats()\n    \n    def get_connections(self) -> List[Dict[str, Any]]:\n        \"\"\"Lista conexões\"\"\"\n        return self.connection_manager.list_connections()\n"}},"query_language":"Portuguese"}}
+"""
+Gerenciador de WebSockets para Evolution API
+
+Implementa:
+- Gerenciamento de conexões
+- Broadcasting de eventos
+- Autenticação de WebSocket
+- Rate limiting
+- Reconexão automática
+- Monitoramento de saúde
+
+Autor: AgnoMaster - Evolution API WebSocket Expert
+Data: 2025-01-24
+"""
+
+import json
+import asyncio
+import time
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Set, Optional, Any, Callable
+from dataclasses import dataclass, field
+from enum import Enum
+from collections import defaultdict
+import uuid
+
+from fastapi import WebSocket, WebSocketDisconnect, status
+from loguru import logger
+import redis.asyncio as redis
+
+from .websocket_events import EventType, WebSocketEvent
+from .websocket_auth import WebSocketAuthenticator
+from ..auth.jwt_auth import User
+
+
+class ConnectionState(str, Enum):
+    """Estados de conexão WebSocket"""
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    AUTHENTICATED = "authenticated"
+    DISCONNECTING = "disconnecting"
+    DISCONNECTED = "disconnected"
+    ERROR = "error"
+
+
+class SubscriptionType(str, Enum):
+    """Tipos de subscrição"""
+    ALL = "all"
+    INSTANCE_STATUS = "instance_status"
+    MESSAGES = "messages"
+    AGENT_EVENTS = "agent_events"
+    SYSTEM_EVENTS = "system_events"
+    USER_EVENTS = "user_events"
+
+
+@dataclass
+class WebSocketConnection:
+    """Representa uma conexão WebSocket"""
+    id: str
+    websocket: WebSocket
+    user: Optional[User] = None
+    state: ConnectionState = ConnectionState.CONNECTING
+    connected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_ping: Optional[datetime] = None
+    last_pong: Optional[datetime] = None
+    subscriptions: Set[SubscriptionType] = field(default_factory=set)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    message_count: int = 0
+    error_count: int = 0
+    
+    @property
+    def is_authenticated(self) -> bool:
+        return self.state == ConnectionState.AUTHENTICATED and self.user is not None
+    
+    @property
+    def is_alive(self) -> bool:
+        return self.state in [ConnectionState.CONNECTED, ConnectionState.AUTHENTICATED]
+    
+    @property
+    def connection_duration(self) -> timedelta:
+        return datetime.now(timezone.utc) - self.connected_at
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user.id if self.user else None,
+            "username": self.user.username if self.user else None,
+            "state": self.state.value,
+            "connected_at": self.connected_at.isoformat(),
+            "last_ping": self.last_ping.isoformat() if self.last_ping else None,
+            "last_pong": self.last_pong.isoformat() if self.last_pong else None,
+            "subscriptions": list(self.subscriptions),
+            "message_count": self.message_count,
+            "error_count": self.error_count,
+            "connection_duration_seconds": self.connection_duration.total_seconds(),
+            "metadata": self.metadata
+        }
+
+
+class ConnectionManager:
+    """
+    Gerenciador de conexões WebSocket
+    """
+    
+    def __init__(self, redis_client: Optional[redis.Redis] = None):
+        self.connections: Dict[str, WebSocketConnection] = {}
+        self.user_connections: Dict[str, Set[str]] = defaultdict(set)
+        self.subscription_connections: Dict[SubscriptionType, Set[str]] = defaultdict(set)
+        self.redis_client = redis_client
+        
+        # Estatísticas
+        self.total_connections = 0
+        self.total_messages = 0
+        self.start_time = datetime.now(timezone.utc)
+        
+        # Tasks
+        self._heartbeat_task = None
+        self._cleanup_task = None
+        self._stats_task = None
+        
+        self._start_background_tasks()
+        
+        logger.info("🔌 ConnectionManager inicializado")
+    
+    async def connect(self, websocket: WebSocket, connection_id: Optional[str] = None) -> WebSocketConnection:
+        """Aceita uma nova conexão WebSocket"""
+        await websocket.accept()
+        
+        if not connection_id:
+            connection_id = str(uuid.uuid4())
+        
+        connection = WebSocketConnection(
+            id=connection_id,
+            websocket=websocket,
+            state=ConnectionState.CONNECTED
+        )
+        
+        self.connections[connection_id] = connection
+        self.total_connections += 1
+        
+        logger.info(f"🔌 Nova conexão WebSocket: {connection_id}")
+        
+        # Envia mensagem de boas-vindas
+        await self.send_to_connection(connection_id, WebSocketEvent(
+            type=EventType.CONNECTION_ESTABLISHED,
+            data={
+                "connection_id": connection_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "message": "Conexão estabelecida com sucesso"
+            }
+        ))
+        
+        return connection
+    
+    async def disconnect(self, connection_id: str, code: int = 1000, reason: str = "Normal closure"):
+        """Desconecta uma conexão WebSocket"""
+        if connection_id not in self.connections:
+            return
+        
+        connection = self.connections[connection_id]
+        connection.state = ConnectionState.DISCONNECTING
+        
+        try:
+            await connection.websocket.close(code=code, reason=reason)
+        except Exception as e:
+            logger.warning(f"Erro ao fechar WebSocket {connection_id}: {e}")
+        
+        # Remove das estruturas de dados
+        if connection.user:
+            self.user_connections[connection.user.id].discard(connection_id)
+            if not self.user_connections[connection.user.id]:
+                del self.user_connections[connection.user.id]
+        
+        for subscription in connection.subscriptions:
+            self.subscription_connections[subscription].discard(connection_id)
+        
+        connection.state = ConnectionState.DISCONNECTED
+        del self.connections[connection_id]
+        
+        logger.info(f"🔌 Conexão WebSocket desconectada: {connection_id} ({reason})")
+    
+    async def authenticate_connection(self, connection_id: str, user: User):
+        """Autentica uma conexão"""
+        if connection_id not in self.connections:
+            raise ValueError(f"Conexão {connection_id} não encontrada")
+        
+        connection = self.connections[connection_id]
+        connection.user = user
+        connection.state = ConnectionState.AUTHENTICATED
+        
+        # Adiciona à lista de conexões do usuário
+        self.user_connections[user.id].add(connection_id)
+        
+        logger.info(f"🔐 Conexão autenticada: {connection_id} (usuário: {user.username})")
+        
+        # Envia confirmação de autenticação
+        await self.send_to_connection(connection_id, WebSocketEvent(
+            type=EventType.AUTHENTICATION_SUCCESS,
+            data={
+                "user_id": user.id,
+                "username": user.username,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        ))
+    
+    async def subscribe(self, connection_id: str, subscription_type: SubscriptionType):
+        """Adiciona uma subscrição"""
+        if connection_id not in self.connections:
+            raise ValueError(f"Conexão {connection_id} não encontrada")
+        
+        connection = self.connections[connection_id]
+        connection.subscriptions.add(subscription_type)
+        self.subscription_connections[subscription_type].add(connection_id)
+        
+        logger.debug(f"📡 Subscrição adicionada: {connection_id} -> {subscription_type.value}")
+        
+        # Confirma subscrição
+        await self.send_to_connection(connection_id, WebSocketEvent(
+            type=EventType.SUBSCRIPTION_CONFIRMED,
+            data={
+                "subscription_type": subscription_type.value,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        ))
+    
+    async def unsubscribe(self, connection_id: str, subscription_type: SubscriptionType):
+        """Remove uma subscrição"""
+        if connection_id not in self.connections:
+            return
+        
+        connection = self.connections[connection_id]
+        connection.subscriptions.discard(subscription_type)
+        self.subscription_connections[subscription_type].discard(connection_id)
+        
+        logger.debug(f"📡 Subscrição removida: {connection_id} -> {subscription_type.value}")
+    
+    async def send_to_connection(self, connection_id: str, event: WebSocketEvent) -> bool:
+        """Envia um evento para uma conexão específica"""
+        if connection_id not in self.connections:
+            return False
+        
+        connection = self.connections[connection_id]
+        
+        if not connection.is_alive:
+            return False
+        
+        try:
+            message = json.dumps(event.to_dict())
+            await connection.websocket.send_text(message)
+            connection.message_count += 1
+            self.total_messages += 1
+            return True
+        except Exception as e:
+            logger.error(f"Erro ao enviar mensagem para {connection_id}: {e}")
+            connection.error_count += 1
+            await self.disconnect(connection_id, code=1011, reason="Send error")
+            return False
+    
+    async def send_to_user(self, user_id: str, event: WebSocketEvent) -> int:
+        """Envia um evento para todas as conexões de um usuário"""
+        if user_id not in self.user_connections:
+            return 0
+        
+        sent_count = 0
+        connection_ids = list(self.user_connections[user_id])
+        
+        for connection_id in connection_ids:
+            if await self.send_to_connection(connection_id, event):
+                sent_count += 1
+        
+        return sent_count
+    
+    async def broadcast_to_subscription(self, subscription_type: SubscriptionType, event: WebSocketEvent) -> int:
+        """Faz broadcast para todas as conexões de uma subscrição"""
+        if subscription_type not in self.subscription_connections:
+            return 0
+        
+        sent_count = 0
+        connection_ids = list(self.subscription_connections[subscription_type])
+        
+        for connection_id in connection_ids:
+            if await self.send_to_connection(connection_id, event):
+                sent_count += 1
+        
+        return sent_count
+    
+    async def broadcast_to_all(self, event: WebSocketEvent) -> int:
+        """Faz broadcast para todas as conexões"""
+        sent_count = 0
+        connection_ids = list(self.connections.keys())
+        
+        for connection_id in connection_ids:
+            if await self.send_to_connection(connection_id, event):
+                sent_count += 1
+        
+        return sent_count
+    
+    async def handle_ping(self, connection_id: str):
+        """Trata ping de uma conexão"""
+        if connection_id not in self.connections:
+            return
+        
+        connection = self.connections[connection_id]
+        connection.last_ping = datetime.now(timezone.utc)
+        
+        # Responde com pong
+        await self.send_to_connection(connection_id, WebSocketEvent(
+            type=EventType.PONG,
+            data={"timestamp": connection.last_ping.isoformat()}
+        ))
+    
+    async def handle_pong(self, connection_id: str):
+        """Trata pong de uma conexão"""
+        if connection_id not in self.connections:
+            return
+        
+        connection = self.connections[connection_id]
+        connection.last_pong = datetime.now(timezone.utc)
+    
+    def get_connection_stats(self) -> Dict[str, Any]:
+        """Retorna estatísticas das conexões"""
+        active_connections = len(self.connections)
+        authenticated_connections = sum(1 for conn in self.connections.values() if conn.is_authenticated)
+        
+        return {
+            "active_connections": active_connections,
+            "authenticated_connections": authenticated_connections,
+            "total_connections": self.total_connections,
+            "total_messages": self.total_messages,
+            "uptime_seconds": (datetime.now(timezone.utc) - self.start_time).total_seconds(),
+            "connections_by_subscription": {
+                sub_type.value: len(connections)
+                for sub_type, connections in self.subscription_connections.items()
+            },
+            "connections_by_user": {
+                user_id: len(connections)
+                for user_id, connections in self.user_connections.items()
+            }
+        }
+    
+    def get_connection_info(self, connection_id: str) -> Optional[Dict[str, Any]]:
+        """Retorna informações de uma conexão"""
+        if connection_id not in self.connections:
+            return None
+        
+        return self.connections[connection_id].to_dict()
+    
+    def list_connections(self) -> List[Dict[str, Any]]:
+        """Lista todas as conexões"""
+        return [conn.to_dict() for conn in self.connections.values()]
+    
+    def _start_background_tasks(self):
+        """Inicia tasks em background"""
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+        self._stats_task = asyncio.create_task(self._stats_loop())
+    
+    async def _heartbeat_loop(self):
+        """Loop de heartbeat para verificar conexões"""
+        while True:
+            try:
+                await asyncio.sleep(30)  # Heartbeat a cada 30 segundos
+                await self._send_heartbeat()
+            except Exception as e:
+                logger.error(f"Erro no heartbeat: {e}")
+    
+    async def _send_heartbeat(self):
+        """Envia heartbeat para todas as conexões"""
+        now = datetime.now(timezone.utc)
+        stale_connections = []
+        
+        for connection_id, connection in self.connections.items():
+            # Verifica se a conexão está "morta"
+            if connection.last_pong:
+                time_since_pong = now - connection.last_pong
+                if time_since_pong > timedelta(minutes=2):
+                    stale_connections.append(connection_id)
+                    continue
+            
+            # Envia ping
+            await self.send_to_connection(connection_id, WebSocketEvent(
+                type=EventType.PING,
+                data={"timestamp": now.isoformat()}
+            ))
+        
+        # Remove conexões "mortas"
+        for connection_id in stale_connections:
+            logger.warning(f"Removendo conexão inativa: {connection_id}")
+            await self.disconnect(connection_id, code=1001, reason="Connection timeout")
+    
+    async def _cleanup_loop(self):
+        """Loop de limpeza"""
+        while True:
+            try:
+                await asyncio.sleep(300)  # Limpeza a cada 5 minutos
+                await self._cleanup_connections()
+            except Exception as e:
+                logger.error(f"Erro na limpeza: {e}")
+    
+    async def _cleanup_connections(self):
+        """Limpa conexões órfãs"""
+        orphaned_connections = []
+        
+        for connection_id, connection in self.connections.items():
+            try:
+                # Tenta enviar uma mensagem de teste
+                await connection.websocket.ping()
+            except Exception:
+                orphaned_connections.append(connection_id)
+        
+        for connection_id in orphaned_connections:
+            logger.warning(f"Removendo conexão órfã: {connection_id}")
+            await self.disconnect(connection_id, code=1011, reason="Connection lost")
+    
+    async def _stats_loop(self):
+        """Loop de estatísticas"""
+        while True:
+            try:
+                await asyncio.sleep(60)  # Estatísticas a cada minuto
+                stats = self.get_connection_stats()
+                logger.info(f"📊 WebSocket Stats: {stats['active_connections']} ativas, {stats['total_messages']} mensagens")
+                
+                # Salva no Redis se disponível
+                if self.redis_client:
+                    await self.redis_client.setex(
+                        "websocket_stats",
+                        300,  # 5 minutos
+                        json.dumps(stats)
+                    )
+            except Exception as e:
+                logger.error(f"Erro nas estatísticas: {e}")
+
+
+class WebSocketManager:
+    """
+    Gerenciador principal de WebSockets
+    """
+    
+    def __init__(self, redis_client: Optional[redis.Redis] = None):
+        self.connection_manager = ConnectionManager(redis_client)
+        self.authenticator = WebSocketAuthenticator()
+        self.redis_client = redis_client
+        
+        # Event handlers
+        self.event_handlers: Dict[EventType, List[Callable]] = defaultdict(list)
+        
+        logger.info("🚀 WebSocketManager inicializado")
+    
+    async def handle_websocket(self, websocket: WebSocket, connection_id: Optional[str] = None):
+        """Trata uma nova conexão WebSocket"""
+        connection = await self.connection_manager.connect(websocket, connection_id)
+        
+        try:
+            while True:
+                # Recebe mensagem
+                data = await websocket.receive_text()
+                await self._handle_message(connection.id, data)
+        
+        except WebSocketDisconnect:
+            logger.info(f"Cliente desconectado: {connection.id}")
+        except Exception as e:
+            logger.error(f"Erro na conexão WebSocket {connection.id}: {e}")
+        finally:
+            await self.connection_manager.disconnect(connection.id)
+    
+    async def _handle_message(self, connection_id: str, message: str):
+        """Trata uma mensagem recebida"""
+        try:
+            data = json.loads(message)
+            event_type = EventType(data.get('type'))
+            event_data = data.get('data', {})
+            
+            # Cria evento
+            event = WebSocketEvent(
+                type=event_type,
+                data=event_data,
+                connection_id=connection_id
+            )
+            
+            # Trata evento
+            await self._process_event(event)
+            
+        except json.JSONDecodeError:
+            logger.warning(f"Mensagem JSON inválida de {connection_id}: {message}")
+        except ValueError as e:
+            logger.warning(f"Tipo de evento inválido de {connection_id}: {e}")
+        except Exception as e:
+            logger.error(f"Erro ao processar mensagem de {connection_id}: {e}")
+    
+    async def _process_event(self, event: WebSocketEvent):
+        """Processa um evento"""
+        # Eventos do sistema
+        if event.type == EventType.AUTHENTICATE:
+            await self._handle_authenticate(event)
+        elif event.type == EventType.SUBSCRIBE:
+            await self._handle_subscribe(event)
+        elif event.type == EventType.UNSUBSCRIBE:
+            await self._handle_unsubscribe(event)
+        elif event.type == EventType.PING:
+            await self.connection_manager.handle_ping(event.connection_id)
+        elif event.type == EventType.PONG:
+            await self.connection_manager.handle_pong(event.connection_id)
+        
+        # Chama handlers customizados
+        for handler in self.event_handlers.get(event.type, []):
+            try:
+                await handler(event)
+            except Exception as e:
+                logger.error(f"Erro no handler de evento {event.type}: {e}")
+    
+    async def _handle_authenticate(self, event: WebSocketEvent):
+        """Trata autenticação"""
+        token = event.data.get('token')
+        if not token:
+            await self.connection_manager.send_to_connection(
+                event.connection_id,
+                WebSocketEvent(
+                    type=EventType.AUTHENTICATION_FAILED,
+                    data={"error": "Token não fornecido"}
+                )
+            )
+            return
+        
+        try:
+            user = await self.authenticator.authenticate(token)
+            await self.connection_manager.authenticate_connection(event.connection_id, user)
+        except Exception as e:
+            await self.connection_manager.send_to_connection(
+                event.connection_id,
+                WebSocketEvent(
+                    type=EventType.AUTHENTICATION_FAILED,
+                    data={"error": str(e)}
+                )
+            )
+    
+    async def _handle_subscribe(self, event: WebSocketEvent):
+        """Trata subscrição"""
+        subscription_type = event.data.get('subscription_type')
+        if not subscription_type:
+            return
+        
+        try:
+            sub_type = SubscriptionType(subscription_type)
+            await self.connection_manager.subscribe(event.connection_id, sub_type)
+        except ValueError:
+            logger.warning(f"Tipo de subscrição inválido: {subscription_type}")
+    
+    async def _handle_unsubscribe(self, event: WebSocketEvent):
+        """Trata cancelamento de subscrição"""
+        subscription_type = event.data.get('subscription_type')
+        if not subscription_type:
+            return
+        
+        try:
+            sub_type = SubscriptionType(subscription_type)
+            await self.connection_manager.unsubscribe(event.connection_id, sub_type)
+        except ValueError:
+            logger.warning(f"Tipo de subscrição inválido: {subscription_type}")
+    
+    def add_event_handler(self, event_type: EventType, handler: Callable):
+        """Adiciona um handler de evento"""
+        self.event_handlers[event_type].append(handler)
+    
+    def remove_event_handler(self, event_type: EventType, handler: Callable):
+        """Remove um handler de evento"""
+        if handler in self.event_handlers[event_type]:
+            self.event_handlers[event_type].remove(handler)
+    
+    async def broadcast_event(self, event: WebSocketEvent, subscription_type: Optional[SubscriptionType] = None):
+        """Faz broadcast de um evento"""
+        if subscription_type:
+            return await self.connection_manager.broadcast_to_subscription(subscription_type, event)
+        else:
+            return await self.connection_manager.broadcast_to_all(event)
+    
+    async def send_to_user(self, user_id: str, event: WebSocketEvent):
+        """Envia evento para um usuário específico"""
+        return await self.connection_manager.send_to_user(user_id, event)
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Retorna estatísticas"""
+        return self.connection_manager.get_connection_stats()
+    
+    def get_connections(self) -> List[Dict[str, Any]]:
+        """Lista conexões"""
+        return self.connection_manager.list_connections()
