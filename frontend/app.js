@@ -1067,9 +1067,9 @@ const AgentManager = {
 
       const data = await response.json();
       
-      // O backend retorna { qr_code: "base64_string", status: "...", expires_at: "..." }
-      if (data.qr_code) {
-        return data.qr_code;
+      // O backend retorna { qr: "base64_string", status: "...", expires_at: "..." }
+      if (data.qr) {
+        return data.qr;
       } else {
         throw new Error('QR Code não disponível');
       }
