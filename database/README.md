@@ -17,7 +17,7 @@ Persists inbound and outbound messages exchanged through a specific instance. Me
 Tracks active chats between an agent and a contact phone number for a given instance. A conversation is uniquely identified by `chat_id`.
 
 ### `system_events`
-Generic event log used for auditing or debugging. Events can reference other entities through the `target_id` field.
+Generic event log used for auditing or debugging. Events may be associated with an `agent` or a `whatsapp_instance` through foreign keys.
 
 ## Relationships
 

@@ -296,8 +296,15 @@
           "notNull": false,
           "autoincrement": false
         },
-        "target_id": {
-          "name": "target_id",
+        "agent_id": {
+          "name": "agent_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "instance_id": {
+          "name": "instance_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -336,7 +343,34 @@
           "isUnique": false
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "system_events_agent_id_agents_id_fk": {
+          "name": "system_events_agent_id_agents_id_fk",
+          "tableFrom": "system_events",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "system_events_instance_id_whatsapp_instances_id_fk": {
+          "name": "system_events_instance_id_whatsapp_instances_id_fk",
+          "tableFrom": "system_events",
+          "tableTo": "whatsapp_instances",
+          "columnsFrom": [
+            "instance_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}

@@ -6,6 +6,12 @@ import {
   deleteAgent,
   initAgents,
 } from "./repositories/agents";
+import {
+  createSystemEvent,
+  listSystemEvents,
+  listSystemEventsByType,
+  initSystemEvents,
+} from "./repositories/events";
 
 const [, , action, payloadJson] = process.argv;
 
@@ -31,6 +37,21 @@ async function main() {
       break;
     case "init":
       await initAgents();
+      console.log("null");
+      break;
+    case "log_event":
+      console.log(JSON.stringify(await createSystemEvent(payload)));
+      break;
+    case "list_events":
+      console.log(JSON.stringify(await listSystemEvents()));
+      break;
+    case "list_events_by_type":
+      console.log(
+        JSON.stringify(await listSystemEventsByType(payload.type))
+      );
+      break;
+    case "init_events":
+      await initSystemEvents();
       console.log("null");
       break;
     default:

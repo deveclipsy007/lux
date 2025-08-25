@@ -394,7 +394,8 @@ class SystemEvent:
     
     # Dados do evento
     source: str = "system"
-    target_id: Optional[str] = None
+    agent_id: Optional[str] = None
+    instance_id: Optional[str] = None
     data: Dict[str, Any] = field(default_factory=dict)
     
     # Metadados
@@ -427,7 +428,8 @@ class SystemEvent:
             'id': self.id,
             'event_type': self.event_type,
             'source': self.source,
-            'target_id': self.target_id,
+            'agent_id': self.agent_id,
+            'instance_id': self.instance_id,
             'data': self.data,
             'timestamp': self.timestamp.isoformat(),
             'processed': self.processed,
