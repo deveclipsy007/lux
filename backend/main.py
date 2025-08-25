@@ -979,6 +979,10 @@ if websocket_available:
         logger.error(f"Failed to initialize WebSocket manager: {e}")
         websocket_available = False
 
+    @app.on_event("shutdown")
+    async def shutdown_websocket_manager():
+        await websocket_manager.connection_manager.shutdown()
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time communication"""
