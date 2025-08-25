@@ -26,6 +26,7 @@ import uuid
 from fastapi import WebSocket, WebSocketDisconnect, status
 from loguru import logger
 import redis.asyncio as redis
+from starlette.websockets import WebSocketState
 
 from .websocket_events import EventType, WebSocketEvent
 from .websocket_auth import WebSocketAuthenticator
@@ -123,7 +124,8 @@ class ConnectionManager:
     
     async def connect(self, websocket: WebSocket, connection_id: Optional[str] = None) -> WebSocketConnection:
         """Aceita uma nova conexão WebSocket"""
-        await websocket.accept()
+        if websocket.application_state != WebSocketState.CONNECTED:
+            await websocket.accept()
         
         if not connection_id:
             connection_id = str(uuid.uuid4())

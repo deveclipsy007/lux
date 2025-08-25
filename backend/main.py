@@ -19,6 +19,7 @@ import os
 import sys
 import json
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -60,6 +61,7 @@ try:
     sys.path.insert(0, str(websocket_path))
     
     from websocket_manager import WebSocketManager
+    from websocket_auth import WebSocketAuthenticator
     websocket_available = True
     logger.info("WebSocket modules loaded successfully")
 except ImportError as e:
@@ -984,10 +986,41 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=1013, reason="WebSocket not available")
         return
 
+    # Accept connection and receive credentials
+    await websocket.accept()
+
     try:
-        await websocket_manager.handle_websocket(websocket)
+        credentials = await websocket.receive_text()
+    except Exception:
+        await websocket.close(code=1008, reason="Credentials required")
+        return
+
+    connection_id = str(uuid.uuid4())
+    authenticator = websocket_manager.authenticator
+
+    try:
+        try:
+            user = await authenticator.authenticate(credentials, connection_id)
+        except Exception:
+            user = await authenticator.authenticate_api_key(credentials, connection_id)
+    except Exception as e:
+        await websocket.close(code=1008, reason="Authentication failed")
+        logger.warning(f"WebSocket authentication failed: {e}")
+        return
+
+    connection = await websocket_manager.connection_manager.connect(websocket, connection_id)
+    await websocket_manager.connection_manager.authenticate_connection(connection_id, user)
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket_manager._handle_message(connection_id, data)
+    except WebSocketDisconnect:
+        logger.info(f"Client disconnected: {connection_id}")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
+    finally:
+        await websocket_manager.connection_manager.disconnect(connection_id)
 
 @app.get("/api/websocket/status")
 async def websocket_status():
