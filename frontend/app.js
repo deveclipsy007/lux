@@ -1060,9 +1060,10 @@ const AgentManager = {
       const data = await response.json();
       Logger.log('info', 'whatsapp', `Instância ${instanceName} criada com sucesso`);
       return data;
-      
+
     } catch (error) {
       Logger.log('error', 'whatsapp', `Erro ao criar instância: ${error.message}`);
+      Toast.error('WhatsApp', 'Falha ao criar instância. Tente repetir a conexão.');
       throw error;
     }
   },
