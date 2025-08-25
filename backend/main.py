@@ -336,10 +336,65 @@ async def update_agent(agent_id: str, agent_in: AgentUpdate):
 
 
 @app.delete("/api/agents/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_agent(agent_id: str):
-    """Remove um agente."""
+async def delete_agent(
+    agent_id: str,
+    evolution_service: EvolutionService = Depends(get_evolution_service),
+):
+    """Remove um agente e sua instância associada no Evolution API."""
+
+    agent = agent_repo.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agente não encontrado")
+
+    # Determina o nome da instância do WhatsApp associada
+    instance_name: Optional[str] = None
+
+    try:
+        instance_name = (
+            agent.config.get("evolution_instance_name")
+            or agent.config.get("instance_name")
+            or agent.config.get("whatsapp", {}).get("instance_name")
+        )
+    except Exception:
+        instance_name = None
+
+    if not instance_name:
+        # Tenta inferir pelo padrão de nome
+        possible = f"{agent.name}-whatsapp"
+        if evolution_service.get_cached_instance(possible):
+            instance_name = possible
+
+    if instance_name:
+        try:
+            success = await evolution_service.delete_instance(instance_name)
+            if not success:
+                logger.error(
+                    f"Falha ao excluir instância {instance_name} do agente {agent.name}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Erro ao excluir instância do WhatsApp",
+                )
+            logger.info(
+                f"Instância {instance_name} do agente {agent.name} excluída com sucesso"
+            )
+        except Exception as e:
+            logger.error(
+                f"Erro ao excluir instância {instance_name} do agente {agent.name}: {e}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Erro ao excluir instância do WhatsApp: {e}",
+            )
+    else:
+        logger.warning(
+            f"Nenhuma instância associada encontrada para o agente {agent.name}"
+        )
+
     if not agent_repo.delete_agent(agent_id):
         raise HTTPException(status_code=404, detail="Agente não encontrado")
+
+    logger.info(f"Agente {agent.name} removido com sucesso")
     return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
 
 # ENDPOINTS DE AGENTES
