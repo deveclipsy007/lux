@@ -146,7 +146,8 @@ class Agent:
             'messages_processed': self.messages_processed,
             'uptime_seconds': self.uptime_seconds,
             'error_count': self.error_count,
-            'config': self.config
+            'config': self.config,
+            'integrations': self.config.get('integrations')
         }
 
 
@@ -195,6 +196,7 @@ class AgentRepository:
             specialization=data["specialization"],
             instructions=data["instructions"],
             tools=list(data["tools"]),
+            config=data.get("config", {})
         )
         self._agents[agent.id] = agent
         self.save()
@@ -214,6 +216,8 @@ class AgentRepository:
             agent.instructions = data["instructions"]
         if "tools" in data and data["tools"] is not None:
             agent.tools = list(data["tools"])
+        if "config" in data and data["config"] is not None:
+            agent.config.update(data["config"])
         agent.updated_at = datetime.now()
         self._agents[agent_id] = agent
         self.save()

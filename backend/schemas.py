@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 from enum import Enum
 
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, Field, validator, root_validator, HttpUrl, EmailStr
 import re
 
 # ENUMS E CONSTANTES
@@ -53,6 +53,43 @@ class LogLevel(str, Enum):
     ERROR = "ERROR"
     CRITICAL = "CRITICAL"
 
+
+# -----------------------------------------------------
+#   CONFIGURAÇÕES DE INTEGRAÇÃO
+# -----------------------------------------------------
+
+
+class WhatsAppIntegrationConfig(BaseModel):
+    """Configuração para integração com WhatsApp"""
+
+    api_url: HttpUrl = Field(..., description="URL base da API do WhatsApp")
+    api_key: str = Field(
+        ..., min_length=10, description="Token de acesso para Evolution API"
+    )
+    phone_number: str = Field(
+        ...,
+        pattern=r"^\+?\d{10,15}$",
+        description="Número de telefone em formato internacional",
+    )
+
+
+class EmailIntegrationConfig(BaseModel):
+    """Configuração para integração com serviço de e-mail"""
+
+    smtp_server: HttpUrl = Field(..., description="URL do servidor SMTP")
+    smtp_port: int = Field(
+        ..., ge=1, le=65535, description="Porta do servidor SMTP"
+    )
+    from_email: EmailStr = Field(..., description="Endereço de e-mail remetente")
+
+
+class IntegrationConfig(BaseModel):
+    """Agrupa configurações de integrações disponíveis"""
+
+    whatsapp: Optional[WhatsAppIntegrationConfig] = None
+    email: Optional[EmailIntegrationConfig] = None
+
+
 # SCHEMAS DE ENTRADA (REQUEST)
 
 class AgentCreate(BaseModel):
@@ -82,7 +119,10 @@ class AgentCreate(BaseModel):
         min_items=1,
         description="Lista de ferramentas/integrações que o agente utilizará"
     )
-    
+    integrations: Optional[IntegrationConfig] = Field(
+        None, description="Configurações das integrações selecionadas"
+    )
+
     # Validação customizada do nome do agente
     @validator('agent_name')
     def validate_agent_name(cls, v):
@@ -110,9 +150,19 @@ class AgentCreate(BaseModel):
             if tool not in seen:
                 seen.add(tool)
                 unique_tools.append(tool)
-        
+
         return unique_tools
-    
+
+    @root_validator(skip_on_failure=True)
+    def validate_integrations(cls, values):
+        tools = values.get('tools', [])
+        integrations: Optional[IntegrationConfig] = values.get('integrations')
+        if AgentTool.WHATSAPP in tools and not (integrations and integrations.whatsapp):
+            raise ValueError('Configuração de WhatsApp é obrigatória')
+        if AgentTool.EMAIL in tools and not (integrations and integrations.email):
+            raise ValueError('Configuração de E-mail é obrigatória')
+        return values
+
     class Config:
         use_enum_values = True
         schema_extra = {
@@ -147,6 +197,10 @@ class AgentUpdate(BaseModel):
         None, description="Lista de ferramentas/integrações"
     )
 
+    integrations: Optional[IntegrationConfig] = Field(
+        None, description="Configurações das integrações selecionadas"
+    )
+
     @validator("agent_name")
     def validate_agent_name(cls, v):
         if v is None:
@@ -174,6 +228,17 @@ class AgentUpdate(BaseModel):
                 unique_tools.append(tool)
         return unique_tools
 
+    @root_validator(skip_on_failure=True)
+    def validate_integrations(cls, values):
+        tools = values.get('tools')
+        integrations = values.get('integrations')
+        if tools:
+            if AgentTool.WHATSAPP in tools and not (integrations and integrations.whatsapp):
+                raise ValueError('Configuração de WhatsApp é obrigatória')
+            if AgentTool.EMAIL in tools and not (integrations and integrations.email):
+                raise ValueError('Configuração de E-mail é obrigatória')
+        return values
+
     class Config:
         use_enum_values = True
 
@@ -189,6 +254,9 @@ class AgentInfo(BaseModel):
     instructions: str = Field(..., description="Instruções do agente")
     tools: List[AgentTool] = Field(
         ..., description="Lista de ferramentas/integrações"
+    )
+    integrations: Optional[IntegrationConfig] = Field(
+        None, description="Configurações das integrações"
     )
 
     class Config:

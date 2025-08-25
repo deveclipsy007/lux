@@ -308,6 +308,10 @@ async def create_agent(agent_in: AgentCreate, current_user: Dict = Depends(get_c
         "instructions": agent_in.instructions,
         "tools": agent_in.tools,
     }
+    if agent_in.integrations:
+        data["config"] = {
+            "integrations": agent_in.integrations.dict(exclude_none=True)
+        }
     agent = agent_repo.create_agent(data)
     return agent.to_dict()
 
@@ -325,6 +329,10 @@ async def update_agent(agent_id: str, agent_in: AgentUpdate, current_user: Dict 
         }.items()
         if v is not None
     }
+    if agent_in.integrations is not None:
+        update_data["config"] = {
+            "integrations": agent_in.integrations.dict(exclude_none=True)
+        }
     agent = agent_repo.update_agent(agent_id, update_data)
     if not agent:
         raise HTTPException(status_code=404, detail="Agente não encontrado")
