@@ -16,7 +16,7 @@ if (provider === "postgres" && !url) {
 }
 
 export default {
-  schema: "./database/schema.ts",
+  schema: "./database/schema/index.ts",
   out: "./database/migrations",
   dialect,
   dbCredentials: {
