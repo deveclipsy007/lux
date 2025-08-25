@@ -50,7 +50,8 @@ from schemas import (
 from services.generator import CodeGeneratorService
 from services.evolution import EvolutionService
 from services.agno import AgnoService
-from models import AgentRepository, SystemEvent, EventType, app_store
+from models import SystemEvent, EventType, app_store
+from db.agent_repo import AgentRepository
 
 # WebSocket imports (bypassing problematic modules)
 try:
@@ -100,8 +101,8 @@ class Settings(BaseSettings):
 # Instância global das configurações
 settings = Settings()
 
-# Repositório de agentes com persistência simples em disco
-agent_repo = AgentRepository(Path("agents.json"))
+# Repositório de agentes com persistência em banco de dados
+agent_repo = AgentRepository()
 
 # Caminho para persistência de eventos do sistema
 events_file = settings.logs_dir / "events.json"
@@ -187,9 +188,10 @@ async def lifespan(app: FastAPI):
     settings.generated_agents_dir.mkdir(exist_ok=True)
     logger.info(f"Diretório de agentes criado: {settings.generated_agents_dir}")
 
-    # Carrega agentes persistidos
-    agent_repo.load()
-    logger.info(f"{len(agent_repo.list_agents())} agentes carregados do disco")
+    # Inicializa repositório de agentes
+    await agent_repo.init()
+    agents = await agent_repo.list_agents()
+    logger.info(f"{len(agents)} agentes carregados do banco")
     
     # Testa conectividade com serviços externos
     try:
@@ -204,7 +206,6 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    agent_repo.save()
     logger.info("🔴 Finalizando aplicação...")
 
 # Criação da aplicação FastAPI
@@ -311,13 +312,14 @@ async def health_check():
 @app.get("/api/agents", response_model=List[AgentInfo])
 async def list_agents(current_user: Dict = Depends(get_current_user)):
     """Lista todos os agentes cadastrados."""
-    return [agent.to_dict() for agent in agent_repo.list_agents()]
+    agents = await agent_repo.list_agents()
+    return [agent.to_dict() for agent in agents]
 
 
 @app.get("/api/agents/{agent_id}", response_model=AgentInfo)
 async def get_agent(agent_id: str, current_user: Dict = Depends(get_current_user)):
     """Retorna um agente específico."""
-    agent = agent_repo.get_agent(agent_id)
+    agent = await agent_repo.get_agent(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agente não encontrado")
     return agent.to_dict()
@@ -336,7 +338,7 @@ async def create_agent(agent_in: AgentCreate, current_user: Dict = Depends(get_c
         data["config"] = {
             "integrations": agent_in.integrations.dict(exclude_none=True)
         }
-    agent = agent_repo.create_agent(data)
+    agent = await agent_repo.create_agent(data)
     await log_event(EventType.AGENT_CREATED, agent.id, agent.to_dict())
     return agent.to_dict()
 
@@ -358,7 +360,7 @@ async def update_agent(agent_id: str, agent_in: AgentUpdate, current_user: Dict 
         update_data["config"] = {
             "integrations": agent_in.integrations.dict(exclude_none=True)
         }
-    agent = agent_repo.update_agent(agent_id, update_data)
+    agent = await agent_repo.update_agent(agent_id, update_data)
     if not agent:
         raise HTTPException(status_code=404, detail="Agente não encontrado")
     await log_event(EventType.AGENT_UPDATED, agent_id, agent.to_dict())
@@ -373,7 +375,7 @@ async def delete_agent(
 ):
     """Remove um agente e sua instância associada no Evolution API."""
 
-    agent = agent_repo.get_agent(agent_id)
+    agent = await agent_repo.get_agent(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agente não encontrado")
 
@@ -422,7 +424,7 @@ async def delete_agent(
             f"Nenhuma instância associada encontrada para o agente {agent.name}"
         )
 
-    if not agent_repo.delete_agent(agent_id):
+    if not await agent_repo.delete_agent(agent_id):
         raise HTTPException(status_code=404, detail="Agente não encontrado")
     await log_event(EventType.AGENT_DELETED, agent_id, {"name": agent.name})
     logger.info(f"Agente {agent.name} removido com sucesso")

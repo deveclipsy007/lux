@@ -13,7 +13,7 @@ Data: 2025-01-24
 
 import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Set, Union
+from typing import Dict, List, Optional, Any, Set
 from enum import Enum
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -150,86 +150,6 @@ class Agent:
             'integrations': self.config.get('integrations')
         }
 
-
-class AgentRepository:
-    """Repositório simples para gerenciamento de agentes.
-
-    Os dados são mantidos em memória e persistidos em disco em formato JSON.
-    """
-
-    def __init__(self, storage_path: Union[str, Path]):
-        self.storage_path = Path(storage_path)
-        self._agents: Dict[str, Agent] = {}
-
-    # -----------------------------------------------------
-    # Operações de persistência
-    # -----------------------------------------------------
-    def load(self) -> None:
-        """Carrega agentes do arquivo JSON se existir."""
-        if self.storage_path.exists():
-            data = json.loads(self.storage_path.read_text(encoding="utf-8"))
-            self._agents = {item["id"]: Agent(**item) for item in data}
-
-    def save(self) -> None:
-        """Salva agentes atuais no arquivo JSON."""
-        data = [agent.to_dict() for agent in self._agents.values()]
-        self.storage_path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-
-    # -----------------------------------------------------
-    # Métodos CRUD
-    # -----------------------------------------------------
-    def list_agents(self) -> List[Agent]:
-        """Retorna todos os agentes."""
-        return list(self._agents.values())
-
-    def get_agent(self, agent_id: str) -> Optional[Agent]:
-        """Obtém agente pelo ID."""
-        return self._agents.get(agent_id)
-
-    def create_agent(self, data: Dict[str, Any]) -> Agent:
-        """Cria novo agente a partir dos dados fornecidos."""
-        agent = Agent(
-            id=data.get("id") or Agent.generate_id(),
-            name=data["name"],
-            specialization=data["specialization"],
-            instructions=data["instructions"],
-            tools=list(data["tools"]),
-            config=data.get("config", {})
-        )
-        self._agents[agent.id] = agent
-        self.save()
-        return agent
-
-    def update_agent(self, agent_id: str, data: Dict[str, Any]) -> Optional[Agent]:
-        """Atualiza um agente existente."""
-        agent = self._agents.get(agent_id)
-        if not agent:
-            return None
-
-        if "name" in data:
-            agent.name = data["name"]
-        if "specialization" in data:
-            agent.specialization = data["specialization"]
-        if "instructions" in data:
-            agent.instructions = data["instructions"]
-        if "tools" in data and data["tools"] is not None:
-            agent.tools = list(data["tools"])
-        if "config" in data and data["config"] is not None:
-            agent.config.update(data["config"])
-        agent.updated_at = datetime.now()
-        self._agents[agent_id] = agent
-        self.save()
-        return agent
-
-    def delete_agent(self, agent_id: str) -> bool:
-        """Remove um agente pelo ID."""
-        if agent_id in self._agents:
-            del self._agents[agent_id]
-            self.save()
-            return True
-        return False
 
 @dataclass
 class GeneratedFile:
