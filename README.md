@@ -108,15 +108,25 @@ uvicorn main:app --reload --port 8000
 
 #### Banco de Dados
 
-Por padrão o projeto usa SQLite. Para migrar para PostgreSQL:
+O backend utiliza o Drizzle para gerenciar migrações. É possível alternar entre
+SQLite e PostgreSQL configurando a variável `DB_PROVIDER` e executando as
+migrações correspondentes:
 
 ```bash
+# SQLite (padrão)
+export DB_PROVIDER=sqlite   # ou remova para usar o padrão
+npm run migrate
+```
+
+```bash
+# PostgreSQL
 export DB_PROVIDER=postgres
 export DATABASE_URL=postgres://usuario:senha@localhost:5432/lux
 npm run migrate
 ```
 
-Retire as variáveis para voltar ao SQLite.
+Para retornar ao SQLite, defina `DB_PROVIDER=sqlite` (e remova `DATABASE_URL`),
+e execute novamente `npm run migrate`.
 
 ### 3. Frontend Setup
 

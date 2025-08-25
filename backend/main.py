@@ -20,6 +20,7 @@ import sys
 import json
 import asyncio
 import uuid
+import subprocess
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -176,6 +177,17 @@ async def lifespan(app: FastAPI):
     # Cria diretórios necessários
     settings.generated_agents_dir.mkdir(exist_ok=True)
     logger.info(f"Diretório de agentes criado: {settings.generated_agents_dir}")
+
+    # Executa migrações do banco de dados
+    try:
+        subprocess.run(
+            ["npm", "run", "migrate"],
+            check=True,
+            cwd=Path(__file__).resolve().parent.parent,
+        )
+        logger.info("Migrações executadas")
+    except Exception as e:
+        logger.error(f"Falha ao executar migrações: {e}")
 
     # Inicializa repositórios
     await agent_repo.init()
