@@ -10,8 +10,9 @@ from datetime import datetime
 import time
 
 class WebSocketTester:
-    def __init__(self, url: str = "ws://localhost:8000/ws"):
+    def __init__(self, url: str = "ws://localhost:8000/ws", token: str = "test-token"):
         self.url = url
+        self.token = token
         
     async def test_connection(self):
         """Test basic connection"""
@@ -23,13 +24,16 @@ class WebSocketTester:
             async with websockets.connect(self.url, ping_interval=20, ping_timeout=10) as websocket:
                 connect_time = time.time() - start_time
                 print(f"Connection established in {connect_time:.3f}s")
-                
+
+                # Send authentication token as first message
+                await websocket.send(self.token)
+
                 test_message = {
                     "type": "ping",
                     "timestamp": datetime.now().isoformat(),
                     "data": {"test": "connection_test"}
                 }
-                
+
                 await websocket.send(json.dumps(test_message))
                 print("Message sent successfully")
                 
@@ -55,6 +59,8 @@ class WebSocketTester:
         
         try:
             async with websockets.connect(self.url) as websocket:
+                # Send authentication token first
+                await websocket.send(self.token)
                 latencies = []
                 
                 for i in range(count):
@@ -118,6 +124,7 @@ async def main():
         
         try:
             async with websockets.connect(url, ping_timeout=3) as ws:
+                await ws.send("test-token")
                 print(f"Found WebSocket server on port {port}")
                 tester = WebSocketTester(url)
                 result = await tester.run_tests()
