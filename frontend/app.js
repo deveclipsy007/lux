@@ -801,6 +801,13 @@ const ApiClient = {
   },
 
   /**
+   * Obtém dados de um agente específico
+   */
+  async getAgent(agentId) {
+    return this.request(`/api/agents/${agentId}`);
+  },
+
+  /**
    * Atualiza agente existente
    */
   async updateAgent(agentId, agentData) {
@@ -926,6 +933,7 @@ const Navigation = {
 // Gerenciador de Agentes
 const AgentManager = {
   editingAgentId: null,
+  currentAgentId: null,
 
   /**
    * Renderiza lista de agentes
@@ -969,6 +977,9 @@ const AgentManager = {
           </div>
         </div>
         <div class="agent-card-actions">
+          <button type="button" class="button button-small" onclick="AgentManager.viewAgent('${agent.id}')">
+            Detalhes
+          </button>
           <button type="button" class="button button-small" onclick="AgentManager.previewAgent('${agent.id}')">
             Pré-visualizar
           </button>
@@ -1035,6 +1046,38 @@ const AgentManager = {
     };
     
     return badges[status] || badges.DESCONHECIDO;
+  },
+
+  /**
+   * Exibe detalhes do agente
+   */
+  async viewAgent(agentId) {
+    try {
+      const agent = await ApiClient.getAgent(agentId);
+      this.currentAgentId = agentId;
+
+      const nameInput = document.getElementById('detail-agent-name');
+      const instructionsInput = document.getElementById('detail-agent-instructions');
+      const toolsContainer = document.getElementById('detail-agent-tools');
+      const statsContainer = document.getElementById('detail-agent-stats');
+
+      if (nameInput) nameInput.value = agent.name || '';
+      if (instructionsInput) instructionsInput.value = agent.instructions || '';
+      if (toolsContainer) {
+        toolsContainer.innerHTML = (agent.tools || []).map(t => `<span class="tool-tag">${t}</span>`).join('');
+      }
+      if (statsContainer) {
+        statsContainer.innerHTML = `
+          <p>Mensagens processadas: ${agent.messages_processed || 0}</p>
+          <p>Uptime: ${agent.uptime_seconds || 0}s</p>
+          <p>Erros: ${agent.error_count || 0}</p>
+        `;
+      }
+
+      Navigation.switchSection('page-agent-detail');
+    } catch (error) {
+      Toast.error('Erro', error.message || 'Não foi possível carregar o agente');
+    }
   },
 
   /**
