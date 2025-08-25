@@ -22,3 +22,15 @@ export async function getInstanceById(
 export async function listInstances(): Promise<WhatsappInstance[]> {
   return db.select().from(whatsappInstances);
 }
+
+export async function updateInstance(
+  id: number,
+  data: Partial<typeof whatsappInstances.$inferInsert>
+): Promise<WhatsappInstance | undefined> {
+  const [row] = await db
+    .update(whatsappInstances)
+    .set(data)
+    .where(eq(whatsappInstances.id, id))
+    .returning();
+  return row;
+}

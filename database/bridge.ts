@@ -12,6 +12,16 @@ import {
   listSystemEventsByType,
   initSystemEvents,
 } from "./repositories/events";
+import {
+  createInstance,
+  getInstanceById,
+  listInstances,
+  updateInstance,
+} from "./repositories/instances";
+import {
+  createMessage,
+  listMessagesByInstance,
+} from "./repositories/messages";
 
 const [, , action, payloadJson] = process.argv;
 
@@ -53,6 +63,28 @@ async function main() {
     case "init_events":
       await initSystemEvents();
       console.log("null");
+      break;
+    case "create_instance":
+      console.log(JSON.stringify(await createInstance(payload)));
+      break;
+    case "get_instance":
+      console.log(JSON.stringify(await getInstanceById(payload.id)));
+      break;
+    case "list_instances":
+      console.log(JSON.stringify(await listInstances()));
+      break;
+    case "update_instance":
+      console.log(
+        JSON.stringify(await updateInstance(payload.id, payload.data))
+      );
+      break;
+    case "create_message":
+      console.log(JSON.stringify(await createMessage(payload)));
+      break;
+    case "list_messages_by_instance":
+      console.log(
+        JSON.stringify(await listMessagesByInstance(payload.instanceId))
+      );
       break;
     default:
       console.error(`Unknown action: ${action}`);

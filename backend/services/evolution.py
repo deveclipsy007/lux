@@ -35,8 +35,9 @@ try:
 except ImportError:
     from pydantic import BaseSettings
 
-from schemas import WhatsAppInstanceStatus
-from models import WhatsAppInstance, Message, ConnectionState
+from models import Message, ConnectionState, MessageType
+from backend.db.whatsapp_instance_repository import WhatsAppInstanceRepository
+from backend.db.message_repository import MessageRepository
 
 class EvolutionAPIError(Exception):
     """Exceção personalizada para erros da Evolution API"""
@@ -62,9 +63,12 @@ class EvolutionService:
         self.retry_attempts = 3
         self.retry_delay = 2.0
         
-        # Cache de instâncias
-        self._instances_cache: Dict[str, WhatsAppInstance] = {}
-        self._qr_cache: Dict[str, Dict[str, Any]] = {}
+        # Map between Evolution instance names and database IDs
+        self._instance_ids: Dict[str, int] = {}
+
+        # Repositories
+        self.instance_repo = WhatsAppInstanceRepository()
+        self.message_repo = MessageRepository()
         
         # Callbacks para eventos
         self._message_callbacks: List[Callable] = []
@@ -246,15 +250,16 @@ class EvolutionService:
             # Cria instância via API
             response = await self._make_request("POST", "/instance/create", data=payload)
 
-            # Cria objeto da instância
-            instance = WhatsAppInstance(
-                instance_id=instance_name,
-                webhook_url=webhook_url,
-                status=ConnectionState.DISCONNECTED
+            # Persiste registro da instância no banco
+            db_instance = await self.instance_repo.create_instance(
+                {
+                    "agentId": 1,
+                    "status": ConnectionState.DISCONNECTED.value,
+                    "qrCode": None,
+                    "phoneNumber": None,
+                }
             )
-
-            # Adiciona ao cache
-            self._instances_cache[instance_name] = instance
+            self._instance_ids[instance_name] = int(db_instance["id"])
 
             logger.info(f"✅ Instância {instance_name} criada com sucesso")
 
@@ -294,12 +299,15 @@ class EvolutionService:
                             "POST", "/instance/create", data=payload
                         )
 
-                        instance = WhatsAppInstance(
-                            instance_id=instance_name,
-                            webhook_url=webhook_url,
-                            status=ConnectionState.DISCONNECTED,
+                        db_instance = await self.instance_repo.create_instance(
+                            {
+                                "agentId": 1,
+                                "status": ConnectionState.DISCONNECTED.value,
+                                "qrCode": None,
+                                "phoneNumber": None,
+                            }
                         )
-                        self._instances_cache[instance_name] = instance
+                        self._instance_ids[instance_name] = int(db_instance["id"])
                         logger.info(
                             f"✅ Instância {instance_name} recriada com sucesso"
                         )
@@ -364,9 +372,9 @@ class EvolutionService:
         try:
             await self._make_request("DELETE", f"/instance/delete/{instance_name}")
             
-            # Remove do cache
-            if instance_name in self._instances_cache:
-                del self._instances_cache[instance_name]
+            # Remove mapeamento da instância
+            if instance_name in self._instance_ids:
+                del self._instance_ids[instance_name]
             
             logger.info(f"🗑️ Instância {instance_name} excluída")
             return True
@@ -412,22 +420,16 @@ class EvolutionService:
                 qr_expires_at = datetime.now() + timedelta(seconds=60)
             
             if qr_code:
-                # Atualiza cache
-                self._qr_cache[instance_name] = {
-                    "qr": qr_code,
-                    "expires_at": qr_expires_at,
-                    "generated_at": datetime.now()
-                }
-                
-                # Atualiza instância no cache
-                if instance_name in self._instances_cache:
-                    self._instances_cache[instance_name].update_qr(qr_code, 60)
-                
+                instance_id = self._instance_ids.get(instance_name)
+                if instance_id:
+                    await self.instance_repo.update_instance(
+                        instance_id, {"qrCode": qr_code}
+                    )
                 logger.info(f"✅ QR Code gerado para {instance_name}")
-                
+
                 return {
                     "qr": qr_code,
-                    "expires_at": qr_expires_at.isoformat(),
+                    "expires_at": qr_expires_at.isoformat() if qr_expires_at else None,
                     "status": "QR_AVAILABLE"
                 }
             else:
@@ -470,14 +472,12 @@ class EvolutionService:
                 
             our_state = state_map.get(api_state, ConnectionState.DISCONNECTED)
             
-            # Atualiza cache da instância
-            if instance_name in self._instances_cache:
-                self._instances_cache[instance_name].status = our_state
-                
-                # Se conectado, limpa QR Code
+            instance_id = self._instance_ids.get(instance_name)
+            if instance_id:
+                update_data: Dict[str, Any] = {"status": our_state.value}
                 if our_state == ConnectionState.CONNECTED:
-                    self._instances_cache[instance_name].qr_code = None
-                    self._instances_cache[instance_name].qr_expires_at = None
+                    update_data["qrCode"] = None
+                await self.instance_repo.update_instance(instance_id, update_data)
             
             logger.debug(f"🔍 Estado de {instance_name}: {our_state}")
             
@@ -509,11 +509,13 @@ class EvolutionService:
         
         try:
             await self._make_request("DELETE", f"/instance/logout/{instance_name}")
-            
-            # Atualiza cache
-            if instance_name in self._instances_cache:
-                self._instances_cache[instance_name].mark_disconnected()
-            
+
+            instance_id = self._instance_ids.get(instance_name)
+            if instance_id:
+                await self.instance_repo.update_instance(
+                    instance_id, {"status": ConnectionState.DISCONNECTED.value}
+                )
+
             logger.info(f"📱 Instância {instance_name} desconectada")
             return True
             
@@ -550,19 +552,17 @@ class EvolutionService:
                 data=payload
             )
             
-            # Cria objeto da mensagem
-            msg = Message(
-                instance_id=instance_name,
-                to_number=to,
-                from_me=True,
-                message_type=MessageType.TEXT,
-                content=message,
-                delivered=True
-            )
-            
-            # Atualiza estatísticas da instância
-            if instance_name in self._instances_cache:
-                self._instances_cache[instance_name].messages_sent += 1
+            instance_id = self._instance_ids.get(instance_name)
+            if instance_id:
+                await self.message_repo.log_message(
+                    {
+                        "instanceId": instance_id,
+                        "agentId": 1,
+                        "fromNumber": None,
+                        "toNumber": to,
+                        "content": message,
+                    }
+                )
             
             logger.info(f"✅ Mensagem enviada - ID: {response.get('message_id', 'N/A')}")
             
@@ -571,7 +571,6 @@ class EvolutionService:
                 "status": "sent",
                 "timestamp": datetime.now().isoformat(),
                 "to": to,
-                "message_object": msg,
                 "api_response": response
             }
             
@@ -641,26 +640,26 @@ class EvolutionService:
                 raise EvolutionAPIError(f"Tipo de mídia não suportado: {media_type}")
             
             response = await self._make_request("POST", endpoint, data=payload)
-            
-            # Cria objeto da mensagem
-            msg = Message(
-                instance_id=instance_name,
-                to_number=to,
-                from_me=True,
-                message_type=MessageType(media_type.upper()),
-                content=caption or f"Mídia: {media_type}",
-                media_url=media_url,
-                delivered=True
-            )
-            
+
+            instance_id = self._instance_ids.get(instance_name)
+            if instance_id:
+                await self.message_repo.log_message(
+                    {
+                        "instanceId": instance_id,
+                        "agentId": 1,
+                        "fromNumber": None,
+                        "toNumber": to,
+                        "content": caption or f"Mídia: {media_type}",
+                    }
+                )
+
             logger.info(f"✅ Mídia enviada - Tipo: {media_type}")
-            
+
             return {
                 "message_id": response.get("key", {}).get("id"),
                 "status": "sent",
                 "media_type": media_type,
                 "timestamp": datetime.now().isoformat(),
-                "message_object": msg,
                 "api_response": response
             }
             
@@ -736,10 +735,6 @@ class EvolutionService:
             
             logger.debug(f"🔍 Resposta webhook: {json.dumps(result, indent=2)}")
             
-            # Atualiza cache da instância
-            if instance_name in self._instances_cache:
-                self._instances_cache[instance_name].webhook_url = webhook_url
-            
             logger.info(f"✅ Webhook configurado para {instance_name}")
             return True
             
@@ -760,10 +755,6 @@ class EvolutionService:
         
         try:
             await self._make_request("DELETE", f"/webhook/unset/{instance_name}")
-            
-            # Atualiza cache
-            if instance_name in self._instances_cache:
-                self._instances_cache[instance_name].webhook_url = None
             
             logger.info(f"🔗 Webhook removido de {instance_name}")
             return True
@@ -833,10 +824,20 @@ class EvolutionService:
                 )
                 
                 processed_messages.append(msg)
-                
-                # Atualiza estatísticas da instância
-                if instance_name in self._instances_cache:
-                    self._instances_cache[instance_name].messages_received += 1
+
+                instance_id = self._instance_ids.get(instance_name)
+                if instance_id:
+                    asyncio.create_task(
+                        self.message_repo.log_message(
+                            {
+                                "instanceId": instance_id,
+                                "agentId": 1,
+                                "fromNumber": msg.from_number,
+                                "toNumber": None,
+                                "content": msg.content,
+                            }
+                        )
+                    )
             
             # Chama callbacks registrados
             for callback in self._message_callbacks:
@@ -873,12 +874,15 @@ class EvolutionService:
             
             our_state = state_map.get(new_state, ConnectionState.DISCONNECTED)
             
-            # Atualiza cache da instância
-            if instance_name in self._instances_cache:
-                old_state = self._instances_cache[instance_name].status
-                self._instances_cache[instance_name].status = our_state
-                
-                logger.info(f"🔄 Estado de {instance_name}: {old_state} -> {our_state}")
+            instance_id = self._instance_ids.get(instance_name)
+            old_state = None
+            if instance_id:
+                asyncio.create_task(
+                    self.instance_repo.update_instance(
+                        instance_id, {"status": our_state.value}
+                    )
+                )
+                logger.info(f"🔄 Estado de {instance_name}: {our_state}")
             
             # Chama callbacks de status
             for callback in self._status_callbacks:
@@ -993,47 +997,10 @@ class EvolutionService:
     async def list_instances(self) -> List[Dict[str, Any]]:
         """Alias para get_instance_list"""
         return await self.get_instance_list()
-    
-    def get_cached_instance(self, instance_name: str) -> Optional[WhatsAppInstance]:
-        """
-        Obtém instância do cache local
-        
-        Args:
-            instance_name: Nome da instância
-            
-        Returns:
-            Instância ou None se não encontrada
-        """
-        return self._instances_cache.get(instance_name)
-    
-    def get_all_cached_instances(self) -> List[WhatsAppInstance]:
-        """
-        Obtém todas as instâncias do cache
-        
-        Returns:
-            Lista de instâncias em cache
-        """
-        return list(self._instances_cache.values())
-    
-    async def cleanup_expired_qr_codes(self):
-        """Remove QR Codes expirados do cache"""
-        
-        now = datetime.now()
-        expired_instances = []
-        
-        for instance_name, qr_data in self._qr_cache.items():
-            if qr_data["expires_at"] < now:
-                expired_instances.append(instance_name)
-        
-        for instance_name in expired_instances:
-            del self._qr_cache[instance_name]
-            
-            if instance_name in self._instances_cache:
-                self._instances_cache[instance_name].qr_code = None
-                self._instances_cache[instance_name].qr_expires_at = None
-        
-        if expired_instances:
-            logger.debug(f"🧹 {len(expired_instances)} QR Codes expirados removidos")
+
+    def get_cached_instance(self, instance_name: str) -> Optional[int]:
+        """Retorna o ID da instância armazenado em memória."""
+        return self._instance_ids.get(instance_name)
     
     async def get_health_status(self) -> Dict[str, Any]:
         """
@@ -1045,22 +1012,12 @@ class EvolutionService:
         
         try:
             connection_ok = await self.test_connection()
-            
-            # Estatísticas das instâncias em cache
-            total_instances = len(self._instances_cache)
-            connected_instances = sum(
-                1 for inst in self._instances_cache.values()
-                if inst.status == ConnectionState.CONNECTED
-            )
-            
-            # Limpa QR Codes expirados
-            await self.cleanup_expired_qr_codes()
-            
+            total_instances = len(self._instance_ids)
             return {
                 "evolution_api_connected": connection_ok,
                 "total_cached_instances": total_instances,
-                "connected_instances": connected_instances,
-                "active_qr_codes": len(self._qr_cache),
+                "connected_instances": total_instances,
+                "active_qr_codes": 0,
                 "message_callbacks": len(self._message_callbacks),
                 "status_callbacks": len(self._status_callbacks),
                 "timestamp": datetime.now().isoformat()
