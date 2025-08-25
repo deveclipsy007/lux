@@ -36,8 +36,8 @@ except ImportError:
     from pydantic import BaseSettings
 
 from models import Message, ConnectionState, MessageType
-from backend.db.whatsapp_instance_repository import WhatsAppInstanceRepository
-from backend.db.message_repository import MessageRepository
+from backend.db.instance_repo import InstanceRepo
+from backend.db.message_repo import MessageRepo
 
 class EvolutionAPIError(Exception):
     """Exceção personalizada para erros da Evolution API"""
@@ -67,8 +67,8 @@ class EvolutionService:
         self._instance_ids: Dict[str, int] = {}
 
         # Repositories
-        self.instance_repo = WhatsAppInstanceRepository()
-        self.message_repo = MessageRepository()
+        self.instance_repo = InstanceRepo()
+        self.message_repo = MessageRepo()
         
         # Callbacks para eventos
         self._message_callbacks: List[Callable] = []
@@ -251,7 +251,7 @@ class EvolutionService:
             response = await self._make_request("POST", "/instance/create", data=payload)
 
             # Persiste registro da instância no banco
-            db_instance = await self.instance_repo.create_instance(
+            db_instance = await self.instance_repo.create(
                 {
                     "agentId": 1,
                     "status": ConnectionState.DISCONNECTED.value,
@@ -299,7 +299,7 @@ class EvolutionService:
                             "POST", "/instance/create", data=payload
                         )
 
-                        db_instance = await self.instance_repo.create_instance(
+                        db_instance = await self.instance_repo.create(
                             {
                                 "agentId": 1,
                                 "status": ConnectionState.DISCONNECTED.value,
@@ -422,7 +422,7 @@ class EvolutionService:
             if qr_code:
                 instance_id = self._instance_ids.get(instance_name)
                 if instance_id:
-                    await self.instance_repo.update_instance(
+                    await self.instance_repo.update(
                         instance_id, {"qrCode": qr_code}
                     )
                 logger.info(f"✅ QR Code gerado para {instance_name}")
@@ -477,7 +477,7 @@ class EvolutionService:
                 update_data: Dict[str, Any] = {"status": our_state.value}
                 if our_state == ConnectionState.CONNECTED:
                     update_data["qrCode"] = None
-                await self.instance_repo.update_instance(instance_id, update_data)
+                await self.instance_repo.update(instance_id, update_data)
             
             logger.debug(f"🔍 Estado de {instance_name}: {our_state}")
             
@@ -512,7 +512,7 @@ class EvolutionService:
 
             instance_id = self._instance_ids.get(instance_name)
             if instance_id:
-                await self.instance_repo.update_instance(
+                await self.instance_repo.update(
                     instance_id, {"status": ConnectionState.DISCONNECTED.value}
                 )
 
@@ -554,7 +554,7 @@ class EvolutionService:
             
             instance_id = self._instance_ids.get(instance_name)
             if instance_id:
-                await self.message_repo.log_message(
+                await self.message_repo.create(
                     {
                         "instanceId": instance_id,
                         "agentId": 1,
@@ -643,7 +643,7 @@ class EvolutionService:
 
             instance_id = self._instance_ids.get(instance_name)
             if instance_id:
-                await self.message_repo.log_message(
+                await self.message_repo.create(
                     {
                         "instanceId": instance_id,
                         "agentId": 1,
@@ -828,7 +828,7 @@ class EvolutionService:
                 instance_id = self._instance_ids.get(instance_name)
                 if instance_id:
                     asyncio.create_task(
-                        self.message_repo.log_message(
+                        self.message_repo.create(
                             {
                                 "instanceId": instance_id,
                                 "agentId": 1,
@@ -878,7 +878,7 @@ class EvolutionService:
             old_state = None
             if instance_id:
                 asyncio.create_task(
-                    self.instance_repo.update_instance(
+                    self.instance_repo.update(
                         instance_id, {"status": our_state.value}
                     )
                 )
