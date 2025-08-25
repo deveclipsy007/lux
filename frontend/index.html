@@ -554,6 +554,87 @@
         </div>
     </div>
 
+    <!-- Modal Editar Agente -->
+    <div id="modal-edit-agent" class="modal" role="dialog" aria-labelledby="modal-edit-title" aria-hidden="true">
+        <div class="modal-backdrop" aria-label="Fechar modal"></div>
+        <div class="modal-content">
+            <header class="modal-header">
+                <h2 id="modal-edit-title" class="modal-title">Editar Agente</h2>
+                <button type="button" class="modal-close" aria-label="Fechar modal">✕</button>
+            </header>
+            <div class="modal-body">
+                <form id="edit-agent-form" class="agent-form" onsubmit="return false;">
+                    <input type="hidden" id="edit-agent-id" />
+
+                    <div class="form-group">
+                        <div class="input-wrapper">
+                            <input type="text" id="edit-agent_name" class="form-input" required maxlength="40" />
+                            <label for="edit-agent_name" class="form-label">Nome do agente</label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <div class="input-wrapper">
+                            <textarea id="edit-instructions" class="form-textarea" rows="4" required></textarea>
+                            <label for="edit-instructions" class="form-label">Instruções</label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <div class="input-wrapper">
+                            <select id="edit-specialization" class="form-select" required>
+                                <option value="" disabled>Selecione uma especialização</option>
+                                <option value="Atendimento">Atendimento ao Cliente</option>
+                                <option value="Agendamento">Agendamento e Reservas</option>
+                                <option value="Vendas">Vendas e Conversão</option>
+                                <option value="Suporte">Suporte Técnico</option>
+                                <option value="Custom">Personalizado</option>
+                            </select>
+                            <label for="edit-specialization" class="form-label">Especialização</label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <fieldset class="checkbox-group">
+                            <legend class="form-label">Integrações (tools)</legend>
+                            <div class="checkbox-list">
+                                <label class="checkbox-item">
+                                    <input type="checkbox" name="tools" value="whatsapp" class="checkbox-input" />
+                                    <span class="checkbox-custom" aria-hidden="true"></span>
+                                    <span class="checkbox-label">WhatsApp (Evolution API)</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" name="tools" value="email" class="checkbox-input" />
+                                    <span class="checkbox-custom" aria-hidden="true"></span>
+                                    <span class="checkbox-label">E-mail</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" name="tools" value="calendar" class="checkbox-input" />
+                                    <span class="checkbox-custom" aria-hidden="true"></span>
+                                    <span class="checkbox-label">Google Calendar</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" name="tools" value="webhooks" class="checkbox-input" />
+                                    <span class="checkbox-custom" aria-hidden="true"></span>
+                                    <span class="checkbox-label">HTTP Webhooks</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" name="tools" value="database" class="checkbox-input" />
+                                    <span class="checkbox-custom" aria-hidden="true"></span>
+                                    <span class="checkbox-label">Banco de dados</span>
+                                </label>
+                            </div>
+                        </fieldset>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="button button-primary" onclick="AgentManager.saveAgent()">Salvar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div id="toast-container" class="toast-container" aria-live="assertive" aria-atomic="true"></div>
 
