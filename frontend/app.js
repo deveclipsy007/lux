@@ -1237,6 +1237,7 @@ const AgentManager = {
       Modal.close();
       this.editingAgentId = null;
       Toast.success('Agente atualizado', 'As alterações foram salvas');
+      Logger.log('info', 'frontend', `Agente atualizado: ${updatedAgent.id}`);
     } catch (error) {
       Toast.error('Erro', error.message || 'Não foi possível salvar o agente');
     }
@@ -1535,6 +1536,7 @@ const AgentManager = {
       StateManager.persistState();
       this.renderAgents();
       Toast.success('Excluído', 'Agente removido com sucesso');
+      Logger.log('info', 'frontend', `Agente removido: ${agentId}`);
     } catch (error) {
       Toast.error('Erro', error.message || 'Não foi possível excluir o agente');
     }
