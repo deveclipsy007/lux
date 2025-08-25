@@ -250,6 +250,61 @@
             </div>
         </section>
 
+        <!-- Seção de Detalhes do Agente -->
+        <section id="page-agent-detail" class="page-section" aria-labelledby="agent-detail-title">
+            <div class="section-container">
+                <div class="section-card">
+                    <header class="card-header">
+                        <div class="card-header-row">
+                            <div>
+                                <h2 id="agent-detail-title" class="card-title">Detalhes do Agente</h2>
+                                <p class="card-description">Informações completas do agente</p>
+                            </div>
+                            <button type="button" class="button button-small" onclick="Navigation.switchSection('page-agents')">
+                                ← Voltar
+                            </button>
+                        </div>
+                    </header>
+
+                    <div class="form-group">
+                        <div class="input-wrapper">
+                            <input type="text" id="detail-agent-name" class="form-input" readonly />
+                            <label for="detail-agent-name" class="form-label">Nome</label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <div class="input-wrapper">
+                            <textarea id="detail-agent-instructions" class="form-textarea" rows="5" readonly></textarea>
+                            <label for="detail-agent-instructions" class="form-label">Instruções</label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Integrações</label>
+                        <div id="detail-agent-tools" class="agent-tools"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Estatísticas</label>
+                        <div id="detail-agent-stats" class="agent-stats"></div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="button button-secondary" onclick="AgentManager.editAgent(AgentManager.currentAgentId)">
+                            Editar
+                        </button>
+                        <button type="button" class="button button-accent" onclick="AgentManager.connectWhatsApp(AgentManager.currentAgentId)">
+                            Conectar WhatsApp
+                        </button>
+                        <button type="button" class="button button-danger" onclick="AgentManager.deleteAgent(AgentManager.currentAgentId)">
+                            Excluir
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- Seção 3: Logs -->
         <section id="page-logs" class="page-section" aria-labelledby="logs-title">
             <div class="section-container">
