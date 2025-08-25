@@ -108,6 +108,18 @@ const Utils = {
   },
 
   /**
+   * Converte texto em slug
+   */
+  slugify(text) {
+    return text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)+/g, '');
+  },
+
+  /**
    * Copia texto para a área de transferência
    */
   async copyToClipboard(text) {
@@ -958,22 +970,30 @@ const AgentManager = {
 
   /**
    * Conecta com WhatsApp via Evolution API
-   */
+  */
   async connectWhatsApp(agentId) {
     try {
+      const agent = appState.agents.find(a => a.id === agentId);
+      if (!agent) {
+        Toast.error('WhatsApp', 'Agente não encontrado');
+        return;
+      }
+
+      const agentSlug = Utils.slugify(agent.agent_name);
+
       // Abre modal de QR Code
       Modal.open('modal-qr');
-      
+
       const qrDisplay = document.getElementById('qr-display');
       qrDisplay.innerHTML = `
         <div class="loading-spinner"></div>
         <p class="qr-label">Criando instância WhatsApp...</p>
       `;
-      
+
       Toast.info('WhatsApp', 'Iniciando conexão com WhatsApp...');
 
       // Cria instância WhatsApp
-      const instanceName = `${appState.evolutionAPI.instanceName}-${agentId}`;
+      const instanceName = `${appState.evolutionAPI.instanceName}-${agentSlug}`;
       await this.createWhatsAppInstance(instanceName);
       
       // Obtém QR Code
@@ -1137,9 +1157,10 @@ const AgentManager = {
    */
   async setupWebhook(instanceName) {
     try {
-      const webhookUrl = `${window.API_BASE}/api/wpp/webhook/${instanceName}`;
-      
-      const response = await fetch(`${window.API_BASE}/api/wpp/instances/${instanceName}/webhook`, {
+      const safeName = encodeURIComponent(instanceName);
+      const webhookUrl = `${window.API_BASE}/api/wpp/webhook/${safeName}`;
+
+      const response = await fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/webhook`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1181,18 +1202,18 @@ const AgentManager = {
    * Atualiza status do agente na UI
    */
   updateAgentStatus(instanceName, status) {
-    // Atualiza cards de agentes
-    const agentCards = document.querySelectorAll('.agent-card');
-    agentCards.forEach(card => {
-      const agentId = card.dataset.agentId;
-      if (instanceName.includes(agentId)) {
-        const statusBadge = card.querySelector('.status-badge');
-        if (statusBadge) {
-          statusBadge.textContent = status;
-          statusBadge.className = `status-badge ${status === 'CONECTADO' ? 'status-success' : 'status-warning'}`;
-        }
+    const slug = instanceName.replace(`${appState.evolutionAPI.instanceName}-`, '');
+    const agent = appState.agents.find(a => Utils.slugify(a.agent_name) === slug);
+    if (!agent) return;
+
+    const card = document.querySelector(`.agent-card[data-agent-id="${agent.id}"]`);
+    if (card) {
+      const statusBadge = card.querySelector('.status-badge');
+      if (statusBadge) {
+        statusBadge.textContent = status;
+        statusBadge.className = `status-badge ${status === 'CONECTADO' ? 'status-success' : 'status-warning'}`;
       }
-    });
+    }
   },
 
   /**
