@@ -1170,15 +1170,19 @@ const AgentManager = {
           events: ['messages.upsert', 'connection.update']
         })
       });
+      const data = await response.json().catch(() => ({}));
 
-      if (response.ok) {
+      if (response.ok && data.status === 'success') {
         Logger.log('info', 'whatsapp', `Webhook configurado: ${webhookUrl}`);
-        Toast.success('WhatsApp', 'Webhook configurado com sucesso!');
+        Toast.success('WhatsApp', data.message || 'Webhook configurado com sucesso!');
       } else {
-        Logger.log('warning', 'whatsapp', 'Falha ao configurar webhook');
+        const errorMessage = data.message || 'Falha ao configurar webhook';
+        Logger.log('warning', 'whatsapp', errorMessage);
+        Toast.error('WhatsApp', errorMessage);
       }
     } catch (error) {
       Logger.log('error', 'whatsapp', `Erro ao configurar webhook: ${error.message}`);
+      Toast.error('WhatsApp', `Erro ao configurar webhook: ${error.message}`);
     }
   },
 

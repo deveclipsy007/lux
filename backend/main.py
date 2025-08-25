@@ -495,6 +495,45 @@ async def get_instance_status(
             detail=f"Erro ao consultar status: {str(e)}"
         )
 
+@app.post("/api/wpp/instances/{instance_id}/webhook")
+async def set_instance_webhook(
+    instance_id: str,
+    payload: Dict[str, Any],
+    evolution_service: EvolutionService = Depends(get_evolution_service)
+):
+    """Configura webhook para uma instância específica"""
+
+    logger.info(f"🔗 Configurando webhook para {instance_id}")
+
+    try:
+        webhook_url = payload.get("webhook_url")
+        events = payload.get("events")
+
+        if not webhook_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="webhook_url é obrigatório"
+            )
+
+        success = await evolution_service.set_webhook(instance_id, webhook_url, events)
+
+        if success:
+            return {"status": "success", "message": "Webhook configurado com sucesso"}
+
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"status": "error", "message": "Falha ao configurar webhook"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro ao configurar webhook {instance_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao configurar webhook: {str(e)}"
+        )
+
 @app.post("/api/wpp/messages")
 async def send_test_message(
     message_data: SendMessage,
