@@ -1,1 +1,434 @@
-"""\nSistema de Autenticação WebSocket para Evolution API\n\nImplementa:\n- Autenticação de tokens JWT\n- Validação de API keys\n- Controle de acesso por roles\n- Rate limiting por usuário\n- Auditoria de autenticação\n\nAutor: AgnoMaster - Evolution API WebSocket Expert\nData: 2025-01-24\n"""\n\nimport asyncio\nfrom datetime import datetime, timezone, timedelta\nfrom typing import Dict, Optional, Set, List\nfrom dataclasses import dataclass, field\nfrom collections import defaultdict\nimport hashlib\nimport secrets\n\nfrom loguru import logger\nimport redis.asyncio as redis\nfrom jose import JWTError, jwt\nfrom passlib.context import CryptContext\n\nfrom ..auth.jwt_auth import JWTAuthenticator, User, Role\nfrom ..auth.security_config import EvolutionSecuritySettings\n\n\n@dataclass\nclass WebSocketSession:\n    \"\"\"Sessão WebSocket autenticada\"\"\"\n    user: User\n    connection_id: str\n    authenticated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))\n    last_activity: datetime = field(default_factory=lambda: datetime.now(timezone.utc))\n    permissions: Set[str] = field(default_factory=set)\n    metadata: Dict[str, any] = field(default_factory=dict)\n    \n    def update_activity(self):\n        \"\"\"Atualiza última atividade\"\"\"\n        self.last_activity = datetime.now(timezone.utc)\n    \n    @property\n    def session_duration(self) -> timedelta:\n        return datetime.now(timezone.utc) - self.authenticated_at\n    \n    @property\n    def idle_time(self) -> timedelta:\n        return datetime.now(timezone.utc) - self.last_activity\n    \n    def has_permission(self, permission: str) -> bool:\n        \"\"\"Verifica se tem permissão\"\"\"\n        return permission in self.permissions or \"admin\" in self.permissions\n    \n    def to_dict(self) -> Dict[str, any]:\n        return {\n            \"user_id\": self.user.id,\n            \"username\": self.user.username,\n            \"connection_id\": self.connection_id,\n            \"authenticated_at\": self.authenticated_at.isoformat(),\n            \"last_activity\": self.last_activity.isoformat(),\n            \"session_duration_seconds\": self.session_duration.total_seconds(),\n            \"idle_time_seconds\": self.idle_time.total_seconds(),\n            \"permissions\": list(self.permissions),\n            \"metadata\": self.metadata\n        }\n\n\nclass WebSocketRateLimiter:\n    \"\"\"Rate limiter para WebSocket\"\"\"\n    \n    def __init__(self, redis_client: Optional[redis.Redis] = None):\n        self.redis_client = redis_client\n        self.local_buckets: Dict[str, Dict[str, any]] = defaultdict(dict)\n        self.cleanup_interval = 300  # 5 minutos\n        self._cleanup_task = None\n        \n        if not redis_client:\n            self._start_cleanup_task()\n    \n    async def is_allowed(self, user_id: str, action: str = \"message\", \n                        limit: int = 60, window: int = 60) -> bool:\n        \"\"\"Verifica se ação é permitida\"\"\"\n        key = f\"ws_rate_limit:{user_id}:{action}\"\n        now = datetime.now(timezone.utc)\n        \n        if self.redis_client:\n            return await self._check_redis_rate_limit(key, limit, window, now)\n        else:\n            return await self._check_local_rate_limit(key, limit, window, now)\n    \n    async def _check_redis_rate_limit(self, key: str, limit: int, window: int, now: datetime) -> bool:\n        \"\"\"Verifica rate limit usando Redis\"\"\"\n        try:\n            pipe = self.redis_client.pipeline()\n            pipe.zremrangebyscore(key, 0, now.timestamp() - window)\n            pipe.zcard(key)\n            pipe.zadd(key, {str(now.timestamp()): now.timestamp()})\n            pipe.expire(key, window)\n            \n            results = await pipe.execute()\n            current_count = results[1]\n            \n            return current_count < limit\n        except Exception as e:\n            logger.error(f\"Erro no rate limiting Redis: {e}\")\n            return True  # Permite em caso de erro\n    \n    async def _check_local_rate_limit(self, key: str, limit: int, window: int, now: datetime) -> bool:\n        \"\"\"Verifica rate limit localmente\"\"\"\n        if key not in self.local_buckets:\n            self.local_buckets[key] = {\"requests\": [], \"last_cleanup\": now}\n        \n        bucket = self.local_buckets[key]\n        cutoff_time = now - timedelta(seconds=window)\n        \n        # Remove requests antigas\n        bucket[\"requests\"] = [req_time for req_time in bucket[\"requests\"] if req_time > cutoff_time]\n        \n        # Verifica limite\n        if len(bucket[\"requests\"]) >= limit:\n            return False\n        \n        # Adiciona nova request\n        bucket[\"requests\"].append(now)\n        bucket[\"last_cleanup\"] = now\n        \n        return True\n    \n    def _start_cleanup_task(self):\n        \"\"\"Inicia task de limpeza\"\"\"\n        self._cleanup_task = asyncio.create_task(self._cleanup_loop())\n    \n    async def _cleanup_loop(self):\n        \"\"\"Loop de limpeza de buckets locais\"\"\"\n        while True:\n            try:\n                await asyncio.sleep(self.cleanup_interval)\n                await self._cleanup_local_buckets()\n            except Exception as e:\n                logger.error(f\"Erro na limpeza de rate limit: {e}\")\n    \n    async def _cleanup_local_buckets(self):\n        \"\"\"Limpa buckets locais antigos\"\"\"\n        now = datetime.now(timezone.utc)\n        cutoff_time = now - timedelta(seconds=self.cleanup_interval)\n        \n        keys_to_remove = []\n        for key, bucket in self.local_buckets.items():\n            if bucket[\"last_cleanup\"] < cutoff_time:\n                keys_to_remove.append(key)\n        \n        for key in keys_to_remove:\n            del self.local_buckets[key]\n        \n        if keys_to_remove:\n            logger.debug(f\"Limpeza rate limit: removidos {len(keys_to_remove)} buckets\")\n\n\nclass WebSocketAuthenticator:\n    \"\"\"\n    Autenticador WebSocket\n    \"\"\"\n    \n    def __init__(self, security_settings: Optional[EvolutionSecuritySettings] = None,\n                 redis_client: Optional[redis.Redis] = None):\n        self.settings = security_settings or EvolutionSecuritySettings()\n        self.jwt_auth = JWTAuthenticator(self.settings)\n        self.redis_client = redis_client\n        self.rate_limiter = WebSocketRateLimiter(redis_client)\n        \n        # Sessões ativas\n        self.active_sessions: Dict[str, WebSocketSession] = {}\n        self.user_sessions: Dict[str, Set[str]] = defaultdict(set)\n        \n        # Permissões por role\n        self.role_permissions = {\n            Role.ADMIN: {\n                \"admin\", \"read\", \"write\", \"delete\", \"manage_instances\",\n                \"send_messages\", \"view_logs\", \"manage_users\", \"system_control\"\n            },\n            Role.USER: {\n                \"read\", \"write\", \"manage_instances\", \"send_messages\"\n            },\n            Role.VIEWER: {\n                \"read\", \"view_logs\"\n            }\n        }\n        \n        # Auditoria\n        self.auth_attempts: List[Dict[str, any]] = []\n        self.max_auth_attempts = 1000\n        \n        logger.info(\"🔐 WebSocketAuthenticator inicializado\")\n    \n    async def authenticate(self, token: str, connection_id: str) -> User:\n        \"\"\"Autentica um token e cria sessão\"\"\"\n        start_time = datetime.now(timezone.utc)\n        \n        try:\n            # Valida token JWT\n            user = await self.jwt_auth.verify_token(token)\n            \n            # Verifica rate limiting\n            if not await self.rate_limiter.is_allowed(user.id, \"auth\", limit=10, window=60):\n                raise ValueError(\"Rate limit de autenticação excedido\")\n            \n            # Cria sessão\n            session = await self._create_session(user, connection_id)\n            \n            # Log de auditoria\n            await self._log_auth_attempt(\n                user_id=user.id,\n                username=user.username,\n                connection_id=connection_id,\n                success=True,\n                duration=(datetime.now(timezone.utc) - start_time).total_seconds()\n            )\n            \n            logger.info(f\"🔐 Autenticação WebSocket bem-sucedida: {user.username} ({connection_id})\")\n            return user\n            \n        except Exception as e:\n            # Log de auditoria para falha\n            await self._log_auth_attempt(\n                connection_id=connection_id,\n                success=False,\n                error=str(e),\n                duration=(datetime.now(timezone.utc) - start_time).total_seconds()\n            )\n            \n            logger.warning(f\"🔐 Falha na autenticação WebSocket ({connection_id}): {e}\")\n            raise\n    \n    async def authenticate_api_key(self, api_key: str, connection_id: str) -> User:\n        \"\"\"Autentica usando API key\"\"\"\n        try:\n            user = await self.jwt_auth.verify_api_key(api_key)\n            session = await self._create_session(user, connection_id)\n            \n            logger.info(f\"🔑 Autenticação API key WebSocket: {user.username} ({connection_id})\")\n            return user\n            \n        except Exception as e:\n            logger.warning(f\"🔑 Falha na autenticação API key WebSocket ({connection_id}): {e}\")\n            raise\n    \n    async def _create_session(self, user: User, connection_id: str) -> WebSocketSession:\n        \"\"\"Cria uma nova sessão\"\"\"\n        # Remove sessão existente se houver\n        if connection_id in self.active_sessions:\n            await self.remove_session(connection_id)\n        \n        # Cria nova sessão\n        permissions = self.role_permissions.get(user.role, set())\n        session = WebSocketSession(\n            user=user,\n            connection_id=connection_id,\n            permissions=permissions\n        )\n        \n        # Armazena sessão\n        self.active_sessions[connection_id] = session\n        self.user_sessions[user.id].add(connection_id)\n        \n        # Salva no Redis se disponível\n        if self.redis_client:\n            await self._save_session_to_redis(session)\n        \n        return session\n    \n    async def remove_session(self, connection_id: str):\n        \"\"\"Remove uma sessão\"\"\"\n        if connection_id not in self.active_sessions:\n            return\n        \n        session = self.active_sessions[connection_id]\n        user_id = session.user.id\n        \n        # Remove das estruturas locais\n        del self.active_sessions[connection_id]\n        self.user_sessions[user_id].discard(connection_id)\n        \n        if not self.user_sessions[user_id]:\n            del self.user_sessions[user_id]\n        \n        # Remove do Redis\n        if self.redis_client:\n            await self._remove_session_from_redis(connection_id)\n        \n        logger.debug(f\"🔐 Sessão removida: {connection_id}\")\n    \n    async def get_session(self, connection_id: str) -> Optional[WebSocketSession]:\n        \"\"\"Obtém uma sessão\"\"\"\n        session = self.active_sessions.get(connection_id)\n        \n        if session:\n            session.update_activity()\n            \n            # Atualiza no Redis\n            if self.redis_client:\n                await self._save_session_to_redis(session)\n        \n        return session\n    \n    async def verify_permission(self, connection_id: str, permission: str) -> bool:\n        \"\"\"Verifica se conexão tem permissão\"\"\"\n        session = await self.get_session(connection_id)\n        \n        if not session:\n            return False\n        \n        return session.has_permission(permission)\n    \n    async def check_rate_limit(self, connection_id: str, action: str = \"message\",\n                              limit: int = 60, window: int = 60) -> bool:\n        \"\"\"Verifica rate limit para uma conexão\"\"\"\n        session = await self.get_session(connection_id)\n        \n        if not session:\n            return False\n        \n        return await self.rate_limiter.is_allowed(session.user.id, action, limit, window)\n    \n    async def get_user_sessions(self, user_id: str) -> List[WebSocketSession]:\n        \"\"\"Obtém todas as sessões de um usuário\"\"\"\n        if user_id not in self.user_sessions:\n            return []\n        \n        sessions = []\n        for connection_id in self.user_sessions[user_id]:\n            session = self.active_sessions.get(connection_id)\n            if session:\n                sessions.append(session)\n        \n        return sessions\n    \n    async def revoke_user_sessions(self, user_id: str) -> int:\n        \"\"\"Revoga todas as sessões de um usuário\"\"\"\n        if user_id not in self.user_sessions:\n            return 0\n        \n        connection_ids = list(self.user_sessions[user_id])\n        \n        for connection_id in connection_ids:\n            await self.remove_session(connection_id)\n        \n        logger.info(f\"🔐 Revogadas {len(connection_ids)} sessões do usuário {user_id}\")\n        return len(connection_ids)\n    \n    async def cleanup_expired_sessions(self, max_idle_time: int = 3600):\n        \"\"\"Limpa sessões expiradas\"\"\"\n        now = datetime.now(timezone.utc)\n        expired_sessions = []\n        \n        for connection_id, session in self.active_sessions.items():\n            if session.idle_time.total_seconds() > max_idle_time:\n                expired_sessions.append(connection_id)\n        \n        for connection_id in expired_sessions:\n            await self.remove_session(connection_id)\n        \n        if expired_sessions:\n            logger.info(f\"🔐 Limpeza: removidas {len(expired_sessions)} sessões expiradas\")\n    \n    async def _save_session_to_redis(self, session: WebSocketSession):\n        \"\"\"Salva sessão no Redis\"\"\"\n        try:\n            key = f\"ws_session:{session.connection_id}\"\n            data = session.to_dict()\n            await self.redis_client.setex(key, 3600, json.dumps(data))\n        except Exception as e:\n            logger.error(f\"Erro ao salvar sessão no Redis: {e}\")\n    \n    async def _remove_session_from_redis(self, connection_id: str):\n        \"\"\"Remove sessão do Redis\"\"\"\n        try:\n            key = f\"ws_session:{connection_id}\"\n            await self.redis_client.delete(key)\n        except Exception as e:\n            logger.error(f\"Erro ao remover sessão do Redis: {e}\")\n    \n    async def _log_auth_attempt(self, connection_id: str, success: bool,\n                               user_id: Optional[str] = None, username: Optional[str] = None,\n                               error: Optional[str] = None, duration: float = 0):\n        \"\"\"Log de tentativa de autenticação\"\"\"\n        attempt = {\n            \"timestamp\": datetime.now(timezone.utc).isoformat(),\n            \"connection_id\": connection_id,\n            \"user_id\": user_id,\n            \"username\": username,\n            \"success\": success,\n            \"error\": error,\n            \"duration_seconds\": duration\n        }\n        \n        self.auth_attempts.append(attempt)\n        \n        # Mantém apenas os últimos N attempts\n        if len(self.auth_attempts) > self.max_auth_attempts:\n            self.auth_attempts = self.auth_attempts[-self.max_auth_attempts:]\n        \n        # Salva no Redis se disponível\n        if self.redis_client:\n            try:\n                key = f\"ws_auth_attempt:{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}:{connection_id}\"\n                await self.redis_client.setex(key, 86400, json.dumps(attempt))  # 24 horas\n            except Exception as e:\n                logger.error(f\"Erro ao salvar log de autenticação: {e}\")\n    \n    def get_auth_stats(self) -> Dict[str, any]:\n        \"\"\"Retorna estatísticas de autenticação\"\"\"\n        total_attempts = len(self.auth_attempts)\n        successful_attempts = sum(1 for attempt in self.auth_attempts if attempt[\"success\"])\n        failed_attempts = total_attempts - successful_attempts\n        \n        return {\n            \"active_sessions\": len(self.active_sessions),\n            \"total_auth_attempts\": total_attempts,\n            \"successful_attempts\": successful_attempts,\n            \"failed_attempts\": failed_attempts,\n            \"success_rate\": successful_attempts / total_attempts if total_attempts > 0 else 0,\n            \"sessions_by_user\": {\n                user_id: len(connections)\n                for user_id, connections in self.user_sessions.items()\n            }\n        }\n    \n    def get_session_info(self) -> List[Dict[str, any]]:\n        \"\"\"Retorna informações de todas as sessões\"\"\"\n        return [session.to_dict() for session in self.active_sessions.values()]\n"},"query_language":"Portuguese"}}
+"""
+Sistema de Autenticação WebSocket para Evolution API
+
+Implementa:
+- Autenticação de tokens JWT
+- Validação de API keys
+- Controle de acesso por roles
+- Rate limiting por usuário
+- Auditoria de autenticação
+
+Autor: AgnoMaster - Evolution API WebSocket Expert
+Data: 2025-01-24
+"""
+
+import asyncio
+from datetime import datetime, timezone, timedelta
+from typing import Dict, Optional, Set, List
+from dataclasses import dataclass, field
+from collections import defaultdict
+import hashlib
+import secrets
+
+from loguru import logger
+import redis.asyncio as redis
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+
+from ..auth.jwt_auth import JWTAuthenticator, User, Role
+from ..auth.security_config import EvolutionSecuritySettings
+
+
+@dataclass
+class WebSocketSession:
+    """Sessão WebSocket autenticada"""
+    user: User
+    connection_id: str
+    authenticated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_activity: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    permissions: Set[str] = field(default_factory=set)
+    metadata: Dict[str, any] = field(default_factory=dict)
+    
+    def update_activity(self):
+        """Atualiza última atividade"""
+        self.last_activity = datetime.now(timezone.utc)
+    
+    @property
+    def session_duration(self) -> timedelta:
+        return datetime.now(timezone.utc) - self.authenticated_at
+    
+    @property
+    def idle_time(self) -> timedelta:
+        return datetime.now(timezone.utc) - self.last_activity
+    
+    def has_permission(self, permission: str) -> bool:
+        """Verifica se tem permissão"""
+        return permission in self.permissions or "admin" in self.permissions
+    
+    def to_dict(self) -> Dict[str, any]:
+        return {
+            "user_id": self.user.id,
+            "username": self.user.username,
+            "connection_id": self.connection_id,
+            "authenticated_at": self.authenticated_at.isoformat(),
+            "last_activity": self.last_activity.isoformat(),
+            "session_duration_seconds": self.session_duration.total_seconds(),
+            "idle_time_seconds": self.idle_time.total_seconds(),
+            "permissions": list(self.permissions),
+            "metadata": self.metadata
+        }
+
+
+class WebSocketRateLimiter:
+    """Rate limiter para WebSocket"""
+    
+    def __init__(self, redis_client: Optional[redis.Redis] = None):
+        self.redis_client = redis_client
+        self.local_buckets: Dict[str, Dict[str, any]] = defaultdict(dict)
+        self.cleanup_interval = 300  # 5 minutos
+        self._cleanup_task = None
+        
+        if not redis_client:
+            self._start_cleanup_task()
+    
+    async def is_allowed(self, user_id: str, action: str = "message", 
+                        limit: int = 60, window: int = 60) -> bool:
+        """Verifica se ação é permitida"""
+        key = f"ws_rate_limit:{user_id}:{action}"
+        now = datetime.now(timezone.utc)
+        
+        if self.redis_client:
+            return await self._check_redis_rate_limit(key, limit, window, now)
+        else:
+            return await self._check_local_rate_limit(key, limit, window, now)
+    
+    async def _check_redis_rate_limit(self, key: str, limit: int, window: int, now: datetime) -> bool:
+        """Verifica rate limit usando Redis"""
+        try:
+            pipe = self.redis_client.pipeline()
+            pipe.zremrangebyscore(key, 0, now.timestamp() - window)
+            pipe.zcard(key)
+            pipe.zadd(key, {str(now.timestamp()): now.timestamp()})
+            pipe.expire(key, window)
+            
+            results = await pipe.execute()
+            current_count = results[1]
+            
+            return current_count < limit
+        except Exception as e:
+            logger.error(f"Erro no rate limiting Redis: {e}")
+            return True  # Permite em caso de erro
+    
+    async def _check_local_rate_limit(self, key: str, limit: int, window: int, now: datetime) -> bool:
+        """Verifica rate limit localmente"""
+        if key not in self.local_buckets:
+            self.local_buckets[key] = {"requests": [], "last_cleanup": now}
+        
+        bucket = self.local_buckets[key]
+        cutoff_time = now - timedelta(seconds=window)
+        
+        # Remove requests antigas
+        bucket["requests"] = [req_time for req_time in bucket["requests"] if req_time > cutoff_time]
+        
+        # Verifica limite
+        if len(bucket["requests"]) >= limit:
+            return False
+        
+        # Adiciona nova request
+        bucket["requests"].append(now)
+        bucket["last_cleanup"] = now
+        
+        return True
+    
+    def _start_cleanup_task(self):
+        """Inicia task de limpeza"""
+        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+    
+    async def _cleanup_loop(self):
+        """Loop de limpeza de buckets locais"""
+        while True:
+            try:
+                await asyncio.sleep(self.cleanup_interval)
+                await self._cleanup_local_buckets()
+            except Exception as e:
+                logger.error(f"Erro na limpeza de rate limit: {e}")
+    
+    async def _cleanup_local_buckets(self):
+        """Limpa buckets locais antigos"""
+        now = datetime.now(timezone.utc)
+        cutoff_time = now - timedelta(seconds=self.cleanup_interval)
+        
+        keys_to_remove = []
+        for key, bucket in self.local_buckets.items():
+            if bucket["last_cleanup"] < cutoff_time:
+                keys_to_remove.append(key)
+        
+        for key in keys_to_remove:
+            del self.local_buckets[key]
+        
+        if keys_to_remove:
+            logger.debug(f"Limpeza rate limit: removidos {len(keys_to_remove)} buckets")
+
+
+class WebSocketAuthenticator:
+    """
+    Autenticador WebSocket
+    """
+    
+    def __init__(self, security_settings: Optional[EvolutionSecuritySettings] = None,
+                 redis_client: Optional[redis.Redis] = None):
+        self.settings = security_settings or EvolutionSecuritySettings()
+        self.jwt_auth = JWTAuthenticator(self.settings)
+        self.redis_client = redis_client
+        self.rate_limiter = WebSocketRateLimiter(redis_client)
+        
+        # Sessões ativas
+        self.active_sessions: Dict[str, WebSocketSession] = {}
+        self.user_sessions: Dict[str, Set[str]] = defaultdict(set)
+        
+        # Permissões por role
+        self.role_permissions = {
+            Role.ADMIN: {
+                "admin", "read", "write", "delete", "manage_instances",
+                "send_messages", "view_logs", "manage_users", "system_control"
+            },
+            Role.USER: {
+                "read", "write", "manage_instances", "send_messages"
+            },
+            Role.VIEWER: {
+                "read", "view_logs"
+            }
+        }
+        
+        # Auditoria
+        self.auth_attempts: List[Dict[str, any]] = []
+        self.max_auth_attempts = 1000
+        
+        logger.info("🔐 WebSocketAuthenticator inicializado")
+    
+    async def authenticate(self, token: str, connection_id: str) -> User:
+        """Autentica um token e cria sessão"""
+        start_time = datetime.now(timezone.utc)
+        
+        try:
+            # Valida token JWT
+            user = await self.jwt_auth.verify_token(token)
+            
+            # Verifica rate limiting
+            if not await self.rate_limiter.is_allowed(user.id, "auth", limit=10, window=60):
+                raise ValueError("Rate limit de autenticação excedido")
+            
+            # Cria sessão
+            session = await self._create_session(user, connection_id)
+            
+            # Log de auditoria
+            await self._log_auth_attempt(
+                user_id=user.id,
+                username=user.username,
+                connection_id=connection_id,
+                success=True,
+                duration=(datetime.now(timezone.utc) - start_time).total_seconds()
+            )
+            
+            logger.info(f"🔐 Autenticação WebSocket bem-sucedida: {user.username} ({connection_id})")
+            return user
+            
+        except Exception as e:
+            # Log de auditoria para falha
+            await self._log_auth_attempt(
+                connection_id=connection_id,
+                success=False,
+                error=str(e),
+                duration=(datetime.now(timezone.utc) - start_time).total_seconds()
+            )
+            
+            logger.warning(f"🔐 Falha na autenticação WebSocket ({connection_id}): {e}")
+            raise
+    
+    async def authenticate_api_key(self, api_key: str, connection_id: str) -> User:
+        """Autentica usando API key"""
+        try:
+            user = await self.jwt_auth.verify_api_key(api_key)
+            session = await self._create_session(user, connection_id)
+            
+            logger.info(f"🔑 Autenticação API key WebSocket: {user.username} ({connection_id})")
+            return user
+            
+        except Exception as e:
+            logger.warning(f"🔑 Falha na autenticação API key WebSocket ({connection_id}): {e}")
+            raise
+    
+    async def _create_session(self, user: User, connection_id: str) -> WebSocketSession:
+        """Cria uma nova sessão"""
+        # Remove sessão existente se houver
+        if connection_id in self.active_sessions:
+            await self.remove_session(connection_id)
+        
+        # Cria nova sessão
+        permissions = self.role_permissions.get(user.role, set())
+        session = WebSocketSession(
+            user=user,
+            connection_id=connection_id,
+            permissions=permissions
+        )
+        
+        # Armazena sessão
+        self.active_sessions[connection_id] = session
+        self.user_sessions[user.id].add(connection_id)
+        
+        # Salva no Redis se disponível
+        if self.redis_client:
+            await self._save_session_to_redis(session)
+        
+        return session
+    
+    async def remove_session(self, connection_id: str):
+        """Remove uma sessão"""
+        if connection_id not in self.active_sessions:
+            return
+        
+        session = self.active_sessions[connection_id]
+        user_id = session.user.id
+        
+        # Remove das estruturas locais
+        del self.active_sessions[connection_id]
+        self.user_sessions[user_id].discard(connection_id)
+        
+        if not self.user_sessions[user_id]:
+            del self.user_sessions[user_id]
+        
+        # Remove do Redis
+        if self.redis_client:
+            await self._remove_session_from_redis(connection_id)
+        
+        logger.debug(f"🔐 Sessão removida: {connection_id}")
+    
+    async def get_session(self, connection_id: str) -> Optional[WebSocketSession]:
+        """Obtém uma sessão"""
+        session = self.active_sessions.get(connection_id)
+        
+        if session:
+            session.update_activity()
+            
+            # Atualiza no Redis
+            if self.redis_client:
+                await self._save_session_to_redis(session)
+        
+        return session
+    
+    async def verify_permission(self, connection_id: str, permission: str) -> bool:
+        """Verifica se conexão tem permissão"""
+        session = await self.get_session(connection_id)
+        
+        if not session:
+            return False
+        
+        return session.has_permission(permission)
+    
+    async def check_rate_limit(self, connection_id: str, action: str = "message",
+                              limit: int = 60, window: int = 60) -> bool:
+        """Verifica rate limit para uma conexão"""
+        session = await self.get_session(connection_id)
+        
+        if not session:
+            return False
+        
+        return await self.rate_limiter.is_allowed(session.user.id, action, limit, window)
+    
+    async def get_user_sessions(self, user_id: str) -> List[WebSocketSession]:
+        """Obtém todas as sessões de um usuário"""
+        if user_id not in self.user_sessions:
+            return []
+        
+        sessions = []
+        for connection_id in self.user_sessions[user_id]:
+            session = self.active_sessions.get(connection_id)
+            if session:
+                sessions.append(session)
+        
+        return sessions
+    
+    async def revoke_user_sessions(self, user_id: str) -> int:
+        """Revoga todas as sessões de um usuário"""
+        if user_id not in self.user_sessions:
+            return 0
+        
+        connection_ids = list(self.user_sessions[user_id])
+        
+        for connection_id in connection_ids:
+            await self.remove_session(connection_id)
+        
+        logger.info(f"🔐 Revogadas {len(connection_ids)} sessões do usuário {user_id}")
+        return len(connection_ids)
+    
+    async def cleanup_expired_sessions(self, max_idle_time: int = 3600):
+        """Limpa sessões expiradas"""
+        now = datetime.now(timezone.utc)
+        expired_sessions = []
+        
+        for connection_id, session in self.active_sessions.items():
+            if session.idle_time.total_seconds() > max_idle_time:
+                expired_sessions.append(connection_id)
+        
+        for connection_id in expired_sessions:
+            await self.remove_session(connection_id)
+        
+        if expired_sessions:
+            logger.info(f"🔐 Limpeza: removidas {len(expired_sessions)} sessões expiradas")
+    
+    async def _save_session_to_redis(self, session: WebSocketSession):
+        """Salva sessão no Redis"""
+        try:
+            key = f"ws_session:{session.connection_id}"
+            data = session.to_dict()
+            await self.redis_client.setex(key, 3600, json.dumps(data))
+        except Exception as e:
+            logger.error(f"Erro ao salvar sessão no Redis: {e}")
+    
+    async def _remove_session_from_redis(self, connection_id: str):
+        """Remove sessão do Redis"""
+        try:
+            key = f"ws_session:{connection_id}"
+            await self.redis_client.delete(key)
+        except Exception as e:
+            logger.error(f"Erro ao remover sessão do Redis: {e}")
+    
+    async def _log_auth_attempt(self, connection_id: str, success: bool,
+                               user_id: Optional[str] = None, username: Optional[str] = None,
+                               error: Optional[str] = None, duration: float = 0):
+        """Log de tentativa de autenticação"""
+        attempt = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "connection_id": connection_id,
+            "user_id": user_id,
+            "username": username,
+            "success": success,
+            "error": error,
+            "duration_seconds": duration
+        }
+        
+        self.auth_attempts.append(attempt)
+        
+        # Mantém apenas os últimos N attempts
+        if len(self.auth_attempts) > self.max_auth_attempts:
+            self.auth_attempts = self.auth_attempts[-self.max_auth_attempts:]
+        
+        # Salva no Redis se disponível
+        if self.redis_client:
+            try:
+                key = f"ws_auth_attempt:{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}:{connection_id}"
+                await self.redis_client.setex(key, 86400, json.dumps(attempt))  # 24 horas
+            except Exception as e:
+                logger.error(f"Erro ao salvar log de autenticação: {e}")
+    
+    def get_auth_stats(self) -> Dict[str, any]:
+        """Retorna estatísticas de autenticação"""
+        total_attempts = len(self.auth_attempts)
+        successful_attempts = sum(1 for attempt in self.auth_attempts if attempt["success"])
+        failed_attempts = total_attempts - successful_attempts
+        
+        return {
+            "active_sessions": len(self.active_sessions),
+            "total_auth_attempts": total_attempts,
+            "successful_attempts": successful_attempts,
+            "failed_attempts": failed_attempts,
+            "success_rate": successful_attempts / total_attempts if total_attempts > 0 else 0,
+            "sessions_by_user": {
+                user_id: len(connections)
+                for user_id, connections in self.user_sessions.items()
+            }
+        }
+    
+    def get_session_info(self) -> List[Dict[str, any]]:
+        """Retorna informações de todas as sessões"""
+        return [session.to_dict() for session in self.active_sessions.values()]

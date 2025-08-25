@@ -59,22 +59,12 @@ try:
     websocket_path = Path(__file__).parent / "websocket"
     sys.path.insert(0, str(websocket_path))
     
-    from simple_manager import SimpleConnectionManager
+    from websocket_manager import WebSocketManager
     websocket_available = True
     logger.info("WebSocket modules loaded successfully")
 except ImportError as e:
     logger.warning(f"WebSocket modules not available: {e}")
     websocket_available = False
-    
-    # Define minimal fallback manager
-    class SimpleConnectionManager:
-        def __init__(self):
-            self.active_connections = {}
-        def add_connection(self, client_id, websocket):
-            self.active_connections[client_id] = websocket
-        def remove_connection(self, client_id):
-            if client_id in self.active_connections:
-                del self.active_connections[client_id]
 
 # Configurações da aplicação
 class Settings(BaseSettings):
@@ -981,7 +971,7 @@ async def stream_logs(current_user = Depends(get_current_user)):
 # Initialize WebSocket manager if available
 if websocket_available:
     try:
-        websocket_manager = SimpleConnectionManager()
+        websocket_manager = WebSocketManager()
         logger.info("WebSocket manager initialized")
     except Exception as e:
         logger.error(f"Failed to initialize WebSocket manager: {e}")
@@ -989,124 +979,15 @@ if websocket_available:
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time communication
-    
-    Supports:
-    - Real-time messaging
-    - Instance status updates  
-    - Event broadcasting
-    - Authentication via token or API key
-    """
+    """WebSocket endpoint for real-time communication"""
     if not websocket_available:
         await websocket.close(code=1013, reason="WebSocket not available")
         return
-    
-    client_id = None
-    
+
     try:
-        # Accept connection
-        await websocket.accept()
-        client_id = f"client_{id(websocket)}"
-        
-        logger.info(f"WebSocket connection established: {client_id}")
-        
-        # Add connection to manager
-        websocket_manager.add_connection(client_id, websocket)
-        
-        # Send welcome message
-        welcome_msg = {
-            "type": "connection",
-            "status": "connected",
-            "client_id": client_id,
-            "timestamp": asyncio.get_event_loop().time(),
-            "message": "WebSocket connection established"
-        }
-        
-        await websocket.send_text(json.dumps(welcome_msg))
-        
-        # Listen for messages
-        while True:
-            try:
-                # Receive message from client
-                data = await websocket.receive_text()
-                message = json.loads(data)
-                
-                logger.debug(f"Received message from {client_id}: {message.get('type', 'unknown')}")
-                
-                # Handle different message types
-                message_type = message.get("type", "")
-                
-                if message_type == "ping":
-                    # Respond to ping with pong
-                    pong_msg = {
-                        "type": "pong", 
-                        "timestamp": asyncio.get_event_loop().time(),
-                        "client_id": client_id
-                    }
-                    await websocket.send_text(json.dumps(pong_msg))
-                    
-                elif message_type == "subscribe":
-                    # Handle subscription request
-                    events = message.get("events", [])
-                    response_msg = {
-                        "type": "subscription",
-                        "status": "success",
-                        "events": events,
-                        "client_id": client_id,
-                        "message": f"Subscribed to {len(events)} events"
-                    }
-                    await websocket.send_text(json.dumps(response_msg))
-                    
-                elif message_type == "test":
-                    # Handle test messages
-                    response_msg = {
-                        "type": "test_response",
-                        "status": "received",
-                        "original_message": message,
-                        "client_id": client_id,
-                        "timestamp": asyncio.get_event_loop().time()
-                    }
-                    await websocket.send_text(json.dumps(response_msg))
-                
-                else:
-                    # Unknown message type
-                    error_msg = {
-                        "type": "error",
-                        "error": f"Unknown message type: {message_type}",
-                        "client_id": client_id,
-                        "timestamp": asyncio.get_event_loop().time()
-                    }
-                    await websocket.send_text(json.dumps(error_msg))
-                    
-            except json.JSONDecodeError:
-                # Invalid JSON
-                error_msg = {
-                    "type": "error",
-                    "error": "Invalid JSON format",
-                    "client_id": client_id,
-                    "timestamp": asyncio.get_event_loop().time()
-                }
-                await websocket.send_text(json.dumps(error_msg))
-                
-            except WebSocketDisconnect:
-                logger.info(f"WebSocket client {client_id} disconnected")
-                break
-                
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket client {client_id} disconnected")
-        
+        await websocket_manager.handle_websocket(websocket)
     except Exception as e:
-        logger.error(f"WebSocket error for {client_id}: {str(e)}")
-        
-    finally:
-        # Clean up connection
-        if client_id and websocket_available:
-            try:
-                websocket_manager.remove_connection(client_id)
-                logger.info(f"WebSocket connection {client_id} cleaned up")
-            except Exception as e:
-                logger.error(f"Error cleaning up WebSocket connection {client_id}: {e}")
+        logger.error(f"WebSocket error: {e}")
 
 @app.get("/api/websocket/status")
 async def websocket_status():
@@ -1119,16 +1000,16 @@ async def websocket_status():
         }
     
     try:
-        active_connections = len(getattr(websocket_manager, 'active_connections', {}))
+        stats = websocket_manager.get_stats()
         return {
             "available": True,
             "message": "WebSocket service running",
-            "active_connections": active_connections,
+            "active_connections": stats.get("active_connections", 0),
             "endpoint": "/ws"
         }
     except Exception as e:
         return {
-            "available": False, 
+            "available": False,
             "message": f"WebSocket service error: {str(e)}",
             "active_connections": 0
         }
