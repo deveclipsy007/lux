@@ -649,6 +649,42 @@ const Validator = {
       required: true,
       minItems: 1,
       message: 'Selecione pelo menos uma integração'
+    },
+    whatsapp_api_url: {
+      required: true,
+      pattern: /^https?:\/\//,
+      message: 'URL da API inválida',
+      dependsOn: 'whatsapp'
+    },
+    whatsapp_api_key: {
+      required: true,
+      minLength: 10,
+      message: 'API key deve ter pelo menos 10 caracteres',
+      dependsOn: 'whatsapp'
+    },
+    whatsapp_phone: {
+      required: true,
+      pattern: /^\+?[1-9]\d{7,14}$/,
+      message: 'Telefone inválido',
+      dependsOn: 'whatsapp'
+    },
+    email_smtp_server: {
+      required: true,
+      pattern: /^https?:\/\//,
+      message: 'Servidor SMTP inválido',
+      dependsOn: 'email'
+    },
+    email_port: {
+      required: true,
+      pattern: /^\d+$/,
+      message: 'Porta inválida',
+      dependsOn: 'email'
+    },
+    email_from: {
+      required: true,
+      pattern: /^[^@\s]+@[^@\s]+\.[^@\s]+$/,
+      message: 'E-mail inválido',
+      dependsOn: 'email'
     }
   },
 
@@ -658,6 +694,13 @@ const Validator = {
   validateField(name, value) {
     const rule = this.rules[name];
     if (!rule) return { valid: true };
+
+    if (rule.dependsOn) {
+      const tools = FormManager ? FormManager.getFieldValue('tools') : [];
+      if (!tools.includes(rule.dependsOn)) {
+        return { valid: true };
+      }
+    }
 
     const errors = [];
 
@@ -1513,13 +1556,14 @@ const FormManager = {
     this.setupActions();
     this.setupCharCounter();
     this.loadDraft();
+    this.toggleIntegrationFields();
   },
 
   /**
    * Configura validação em tempo real
    */
   setupValidation() {
-    const fields = ['agent_name', 'instructions', 'specialization'];
+    const fields = ['agent_name', 'instructions', 'specialization', 'whatsapp_api_url', 'whatsapp_api_key', 'whatsapp_phone', 'email_smtp_server', 'email_port', 'email_from'];
     
     fields.forEach(fieldName => {
       const field = document.querySelector(`[name="${fieldName}"]`);
@@ -1537,6 +1581,7 @@ const FormManager = {
     document.querySelectorAll('[name="tools"]').forEach(checkbox => {
       checkbox.addEventListener('change', () => {
         this.validateField('tools');
+        this.toggleIntegrationFields();
       });
     });
   },
@@ -1587,6 +1632,18 @@ const FormManager = {
     }
   },
 
+  toggleIntegrationFields() {
+    const tools = this.getFieldValue('tools');
+    const wpp = document.getElementById('whatsapp-config');
+    if (wpp) {
+      wpp.style.display = tools.includes('whatsapp') ? 'block' : 'none';
+    }
+    const email = document.getElementById('email-config');
+    if (email) {
+      email.style.display = tools.includes('email') ? 'block' : 'none';
+    }
+  },
+
   /**
    * Valida campo individual
    */
@@ -1624,8 +1681,41 @@ const FormManager = {
       agent_name: this.getFieldValue('agent_name'),
       instructions: this.getFieldValue('instructions'),
       specialization: this.getFieldValue('specialization'),
-      tools: this.getFieldValue('tools')
+      tools: this.getFieldValue('tools'),
+      whatsapp_api_url: this.getFieldValue('whatsapp_api_url'),
+      whatsapp_api_key: this.getFieldValue('whatsapp_api_key'),
+      whatsapp_phone: this.getFieldValue('whatsapp_phone'),
+      email_smtp_server: this.getFieldValue('email_smtp_server'),
+      email_port: this.getFieldValue('email_port'),
+      email_from: this.getFieldValue('email_from')
     };
+  },
+
+  buildPayload(data) {
+    const payload = {
+      agent_name: data.agent_name,
+      instructions: data.instructions,
+      specialization: data.specialization,
+      tools: data.tools,
+      integrations: {}
+    };
+
+    if (data.tools.includes('whatsapp')) {
+      payload.integrations.whatsapp = {
+        api_url: data.whatsapp_api_url,
+        api_key: data.whatsapp_api_key,
+        phone_number: data.whatsapp_phone
+      };
+    }
+    if (data.tools.includes('email')) {
+      payload.integrations.email = {
+        smtp_server: data.email_smtp_server,
+        smtp_port: Number(data.email_port),
+        from_email: data.email_from
+      };
+    }
+
+    return payload;
   },
 
   /**
@@ -1638,17 +1728,27 @@ const FormManager = {
     document.querySelector('[name="agent_name"]').value = draft.agent_name || '';
     document.querySelector('[name="instructions"]').value = draft.instructions || '';
     document.querySelector('[name="specialization"]').value = draft.specialization || '';
-    
+
     // Carrega tools selecionadas
     document.querySelectorAll('[name="tools"]').forEach(checkbox => {
       checkbox.checked = draft.tools.includes(checkbox.value);
     });
+
+    // Carrega configurações de integração
+    document.querySelector('[name="whatsapp_api_url"]').value = draft.integrations?.whatsapp?.api_url || '';
+    document.querySelector('[name="whatsapp_api_key"]').value = draft.integrations?.whatsapp?.api_key || '';
+    document.querySelector('[name="whatsapp_phone"]').value = draft.integrations?.whatsapp?.phone_number || '';
+    document.querySelector('[name="email_smtp_server"]').value = draft.integrations?.email?.smtp_server || '';
+    document.querySelector('[name="email_port"]').value = draft.integrations?.email?.smtp_port || '';
+    document.querySelector('[name="email_from"]').value = draft.integrations?.email?.from_email || '';
     
     // Atualiza contador de caracteres
     const instructionsField = document.getElementById('instructions');
     if (instructionsField) {
       instructionsField.dispatchEvent(new Event('input'));
     }
+
+    this.toggleIntegrationFields();
   },
 
   /**
@@ -1656,7 +1756,8 @@ const FormManager = {
    */
   saveDraft() {
     const data = this.getFormData();
-    StateManager.updateState('agentDraft', data);
+    const payload = this.buildPayload(data);
+    StateManager.updateState('agentDraft', payload);
     Toast.success('Rascunho Salvo', 'Seus dados foram salvos localmente');
     Logger.log('info', 'frontend', 'Rascunho salvo no localStorage');
   },
@@ -1665,7 +1766,7 @@ const FormManager = {
    * Preview do esquema JSON
    */
   previewSchema() {
-    const data = this.getFormData();
+    const data = this.buildPayload(this.getFormData());
     const jsonPreview = document.getElementById('json-preview');
     
     if (jsonPreview) {
@@ -1680,7 +1781,7 @@ const FormManager = {
   async handleSubmit() {
     const data = this.getFormData();
     const validation = Validator.validateForm(data);
-    
+
     if (!validation.valid) {
       // Mostra erros de validação
       for (const [field, result] of Object.entries(validation.fields)) {
@@ -1688,15 +1789,17 @@ const FormManager = {
           Validator.showFieldError(field, result.message);
         }
       }
-      
+
       Toast.error('Formulário Inválido', 'Corrija os erros antes de continuar');
       return;
     }
-    
+
+    const payload = this.buildPayload(data);
+
     // Salva dados e continua
-    StateManager.updateState('agentDraft', data);
+    StateManager.updateState('agentDraft', payload);
     this.showCodeGeneration();
-    
+
     Toast.success('Dados Válidos', 'Agora você pode gerar o código');
   },
 

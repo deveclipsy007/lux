@@ -155,6 +155,59 @@
                             </fieldset>
                         </div>
 
+                        <!-- Configurações de Integração -->
+                        <div id="integration-configs">
+                            <div id="whatsapp-config" class="integration-config" style="display:none;">
+                                <h4 class="form-subtitle">Configurações do WhatsApp</h4>
+                                <div class="form-group">
+                                    <div class="input-wrapper">
+                                        <input type="url" id="whatsapp_api_url" name="whatsapp_api_url" class="form-input" aria-describedby="whatsapp_api_url_error" />
+                                        <label for="whatsapp_api_url" class="form-label">API URL</label>
+                                        <div class="input-error" id="whatsapp_api_url_error" role="alert" aria-live="polite"></div>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <div class="input-wrapper">
+                                        <input type="text" id="whatsapp_api_key" name="whatsapp_api_key" class="form-input" aria-describedby="whatsapp_api_key_error" />
+                                        <label for="whatsapp_api_key" class="form-label">API Key</label>
+                                        <div class="input-error" id="whatsapp_api_key_error" role="alert" aria-live="polite"></div>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <div class="input-wrapper">
+                                        <input type="text" id="whatsapp_phone" name="whatsapp_phone" class="form-input" aria-describedby="whatsapp_phone_error" />
+                                        <label for="whatsapp_phone" class="form-label">Telefone</label>
+                                        <div class="input-error" id="whatsapp_phone_error" role="alert" aria-live="polite"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="email-config" class="integration-config" style="display:none;">
+                                <h4 class="form-subtitle">Configurações de E-mail</h4>
+                                <div class="form-group">
+                                    <div class="input-wrapper">
+                                        <input type="url" id="email_smtp_server" name="email_smtp_server" class="form-input" aria-describedby="email_smtp_server_error" />
+                                        <label for="email_smtp_server" class="form-label">Servidor SMTP</label>
+                                        <div class="input-error" id="email_smtp_server_error" role="alert" aria-live="polite"></div>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <div class="input-wrapper">
+                                        <input type="number" id="email_port" name="email_port" class="form-input" aria-describedby="email_port_error" />
+                                        <label for="email_port" class="form-label">Porta</label>
+                                        <div class="input-error" id="email_port_error" role="alert" aria-live="polite"></div>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <div class="input-wrapper">
+                                        <input type="email" id="email_from" name="email_from" class="form-input" aria-describedby="email_from_error" />
+                                        <label for="email_from" class="form-label">E-mail Remetente</label>
+                                        <div class="input-error" id="email_from_error" role="alert" aria-live="polite"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Ações -->
                         <div class="form-actions">
                             <button type="button" id="btn-preview-agent-schema" class="button button-secondary">
