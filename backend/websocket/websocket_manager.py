@@ -355,15 +355,26 @@ class ConnectionManager:
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
         self._stats_task = asyncio.create_task(self._stats_loop())
+
+    async def shutdown(self):
+        """Cancela tasks em background"""
+        tasks = [self._heartbeat_task, self._cleanup_task, self._stats_task]
+        for task in tasks:
+            if task:
+                task.cancel()
+        await asyncio.gather(*[t for t in tasks if t], return_exceptions=True)
+        logger.info("🔄 ConnectionManager tasks cancelled")
     
     async def _heartbeat_loop(self):
         """Loop de heartbeat para verificar conexões"""
-        while True:
-            try:
+        try:
+            while True:
                 await asyncio.sleep(30)  # Heartbeat a cada 30 segundos
                 await self._send_heartbeat()
-            except Exception as e:
-                logger.error(f"Erro no heartbeat: {e}")
+        except asyncio.CancelledError:
+            logger.info("Heartbeat loop cancelled")
+        except Exception as e:
+            logger.error(f"Erro no heartbeat: {e}")
     
     async def _send_heartbeat(self):
         """Envia heartbeat para todas as conexões"""
@@ -377,26 +388,49 @@ class ConnectionManager:
                 if time_since_pong > timedelta(minutes=2):
                     stale_connections.append(connection_id)
                     continue
-            
-            # Envia ping
-            await self.send_to_connection(connection_id, WebSocketEvent(
-                type=EventType.PING,
-                data={"timestamp": now.isoformat()}
-            ))
+
+            try:
+                # Envia ping frame e evento
+                await connection.websocket.ping()
+                connection.last_ping = now
+                await self.send_to_connection(connection_id, WebSocketEvent(
+                    type=EventType.PING,
+                    data={"timestamp": now.isoformat()}
+                ))
+            except Exception:
+                stale_connections.append(connection_id)
         
         # Remove conexões "mortas"
         for connection_id in stale_connections:
             logger.warning(f"Removendo conexão inativa: {connection_id}")
             await self.disconnect(connection_id, code=1001, reason="Connection timeout")
+
+        # Registra métricas de heartbeat no Redis
+        if self.redis_client:
+            try:
+                metrics = {
+                    "timestamp": now.isoformat(),
+                    "active_connections": len(self.connections),
+                    "stale_connections": len(stale_connections)
+                }
+                await self.redis_client.setex(
+                    "websocket_heartbeat",
+                    120,
+                    json.dumps(metrics)
+                )
+            except Exception as e:
+                logger.error(f"Erro ao registrar heartbeat no Redis: {e}")
     
     async def _cleanup_loop(self):
         """Loop de limpeza"""
-        while True:
-            try:
+        try:
+            while True:
                 await asyncio.sleep(300)  # Limpeza a cada 5 minutos
                 await self._cleanup_connections()
-            except Exception as e:
-                logger.error(f"Erro na limpeza: {e}")
+        except asyncio.CancelledError:
+            logger.info("Cleanup loop cancelled")
+        except Exception as e:
+            logger.error(f"Erro na limpeza: {e}")
     
     async def _cleanup_connections(self):
         """Limpa conexões órfãs"""
@@ -415,12 +449,12 @@ class ConnectionManager:
     
     async def _stats_loop(self):
         """Loop de estatísticas"""
-        while True:
-            try:
+        try:
+            while True:
                 await asyncio.sleep(60)  # Estatísticas a cada minuto
                 stats = self.get_connection_stats()
                 logger.info(f"📊 WebSocket Stats: {stats['active_connections']} ativas, {stats['total_messages']} mensagens")
-                
+
                 # Salva no Redis se disponível
                 if self.redis_client:
                     await self.redis_client.setex(
@@ -428,8 +462,10 @@ class ConnectionManager:
                         300,  # 5 minutos
                         json.dumps(stats)
                     )
-            except Exception as e:
-                logger.error(f"Erro nas estatísticas: {e}")
+        except asyncio.CancelledError:
+            logger.info("Stats loop cancelled")
+        except Exception as e:
+            logger.error(f"Erro nas estatísticas: {e}")
 
 
 class WebSocketManager:
