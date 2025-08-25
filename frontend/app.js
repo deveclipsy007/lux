@@ -536,6 +536,88 @@ const Modal = {
     if (event.key === 'Escape') {
       this.close();
     }
+  },
+
+  /**
+   * Modal de confirmação para exclusão de agente
+   */
+  confirmDelete(agent) {
+    return new Promise((resolve) => {
+      const modalId = 'modal-confirm-delete';
+      let modal = document.getElementById(modalId);
+
+      // Remove modal existente para evitar duplicação
+      if (modal) {
+        modal.remove();
+      }
+
+      modal = document.createElement('div');
+      modal.id = modalId;
+      modal.className = 'modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-hidden', 'true');
+
+      const warningText = agent.whatsappInstance
+        ? '<p class="warning-text">Esta ação removerá também a instância WhatsApp conectada</p>'
+        : '';
+
+      modal.innerHTML = `
+        <div class="modal-backdrop" aria-label="Fechar modal"></div>
+        <div class="modal-content">
+          <header class="modal-header">
+            <h2 class="modal-title">Excluir Agente</h2>
+            <button type="button" class="modal-close" aria-label="Fechar modal">✕</button>
+          </header>
+          <div class="modal-body">
+            <p>Tem certeza que deseja excluir <strong>${Utils.sanitizeHtml(agent.agent_name)}</strong>?</p>
+            ${warningText}
+            <div class="form-group">
+              <div class="input-wrapper">
+                <input type="text" id="confirm-agent-name" class="form-input" />
+                <label for="confirm-agent-name" class="form-label">Digite o nome do agente</label>
+              </div>
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="button button-secondary" data-action="cancel">Cancelar</button>
+            <button type="button" class="button button-danger" data-action="confirm" disabled>Excluir</button>
+          </footer>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+
+      const input = modal.querySelector('#confirm-agent-name');
+      const confirmBtn = modal.querySelector('[data-action="confirm"]');
+      const cancelBtn = modal.querySelector('[data-action="cancel"]');
+      const closeBtn = modal.querySelector('.modal-close');
+
+      const cleanup = () => {
+        this.close(modal);
+        modal.remove();
+      };
+
+      input.addEventListener('input', () => {
+        confirmBtn.disabled = input.value !== agent.agent_name;
+      });
+
+      cancelBtn.addEventListener('click', () => {
+        cleanup();
+        resolve(false);
+      });
+
+      closeBtn.addEventListener('click', () => {
+        cleanup();
+        resolve(false);
+      });
+
+      confirmBtn.addEventListener('click', () => {
+        cleanup();
+        resolve(true);
+      });
+
+      this.open(modalId);
+    });
   }
 };
 
@@ -725,6 +807,15 @@ const ApiClient = {
     return this.request(`/api/agents/${agentId}`, {
       method: 'PUT',
       body: JSON.stringify(agentData)
+    });
+  },
+
+  /**
+   * Remove agente existente
+   */
+  async deleteAgent(agentId) {
+    return this.request(`/api/agents/${agentId}`, {
+      method: 'DELETE'
     });
   },
 
@@ -1064,6 +1155,8 @@ const AgentManager = {
 
       // Cria instância WhatsApp
       const instanceName = `${appState.evolutionAPI.instanceName}-${agentSlug}`;
+      agent.whatsappInstance = instanceName;
+      StateManager.persistState();
       await this.createWhatsAppInstance(instanceName);
       
       // Obtém QR Code
@@ -1329,12 +1422,21 @@ const AgentManager = {
   /**
    * Exclui agente
    */
-  deleteAgent(agentId) {
-    if (confirm('Tem certeza que deseja excluir este agente?')) {
-      appState.agents = appState.agents.filter(agent => agent.id !== agentId);
+  async deleteAgent(agentId) {
+    const agent = appState.agents.find(a => a.id === agentId);
+    if (!agent) return;
+
+    const confirmed = await Modal.confirmDelete(agent);
+    if (!confirmed) return;
+
+    try {
+      await ApiClient.deleteAgent(agentId);
+      appState.agents = appState.agents.filter(a => a.id !== agentId);
       StateManager.persistState();
       this.renderAgents();
       Toast.success('Excluído', 'Agente removido com sucesso');
+    } catch (error) {
+      Toast.error('Erro', error.message || 'Não foi possível excluir o agente');
     }
   }
 };
