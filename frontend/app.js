@@ -1124,12 +1124,47 @@ const AgentManager = {
           if (state === 'open' || state === 'connected') {
             appState.evolutionAPI.connected = true;
             Toast.success('WhatsApp', 'WhatsApp conectado com sucesso!');
-            
+
             // Configura webhook
             await this.setupWebhook(instanceName);
-            
-            // Atualiza UI
-            this.updateAgentStatus(instanceName, 'CONECTADO');
+            // Verifica se o webhook foi configurado corretamente
+            const safeName = encodeURIComponent(instanceName);
+            try {
+              const [statusCheck, webhookCheck] = await Promise.all([
+                fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/status`),
+                fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/webhook`)
+              ]);
+
+              let statusOk = false;
+              if (statusCheck.ok) {
+                const statusData = await statusCheck.json().catch(() => ({}));
+                const verifiedState = statusData.instance?.state || statusData.state;
+                statusOk = verifiedState === 'open' || verifiedState === 'connected';
+              }
+              if (!statusOk) {
+                Logger.log('warning', 'whatsapp', JSON.stringify({ action: 'verify_status', success: false, httpStatus: statusCheck.status }));
+                Toast.warning('WhatsApp', 'Não foi possível confirmar o status da conexão.');
+              }
+
+              let webhookOk = false;
+              if (webhookCheck.ok) {
+                const webhookData = await webhookCheck.json().catch(() => ({}));
+                webhookOk = webhookData.status === 'success';
+              }
+              if (!webhookOk) {
+                Logger.log('warning', 'whatsapp', JSON.stringify({ action: 'verify_webhook', success: false, httpStatus: webhookCheck.status }));
+                Toast.warning('WhatsApp', 'Webhook não confirmado.');
+              }
+
+              if (statusOk && webhookOk) {
+                Logger.log('info', 'whatsapp', JSON.stringify({ action: 'post_setup_verification', success: true }));
+                // Atualiza UI
+                this.updateAgentStatus(instanceName, 'CONECTADO');
+              }
+            } catch (verifyError) {
+              Logger.log('error', 'whatsapp', JSON.stringify({ action: 'post_setup_verification', success: false, error: verifyError.message }));
+              Toast.error('WhatsApp', 'Erro ao verificar conexão após configuração do webhook.');
+            }
             return;
           }
         }
