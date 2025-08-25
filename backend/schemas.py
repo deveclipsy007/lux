@@ -119,10 +119,80 @@ class AgentCreate(BaseModel):
             "example": {
                 "agent_name": "atendimento-bot",
                 "instructions": "Você é um assistente especializado em atendimento ao cliente. Seja sempre educado, prestativo e busque resolver os problemas dos usuários de forma eficiente. Mantenha um tom amigável e profissional.",
-                "specialization": "Atendimento", 
+                "specialization": "Atendimento",
                 "tools": ["whatsapp", "email"]
             }
         }
+
+
+class AgentUpdate(BaseModel):
+    """Schema para atualização de um agente existente"""
+
+    agent_name: Optional[str] = Field(
+        None,
+        min_length=3,
+        max_length=40,
+        description="Nome único do agente",
+    )
+    instructions: Optional[str] = Field(
+        None,
+        min_length=80,
+        max_length=5000,
+        description="Instruções detalhadas para o comportamento do agente",
+    )
+    specialization: Optional[AgentSpecialization] = Field(
+        None, description="Especialização do agente"
+    )
+    tools: Optional[List[AgentTool]] = Field(
+        None, description="Lista de ferramentas/integrações"
+    )
+
+    @validator("agent_name")
+    def validate_agent_name(cls, v):
+        if v is None:
+            return v
+        if not re.match(r"^[a-zA-Z0-9_-]+$", v):
+            raise ValueError(
+                "Nome deve conter apenas letras, números, hífen e underscore"
+            )
+        reserved_names = ["admin", "api", "system", "test", "default"]
+        if v.lower() in reserved_names:
+            raise ValueError(f'Nome "{v}" é reservado pelo sistema')
+        return v
+
+    @validator("tools")
+    def validate_tools(cls, v):
+        if v is None:
+            return v
+        if not v:
+            raise ValueError("Pelo menos uma ferramenta deve ser selecionada")
+        seen = set()
+        unique_tools = []
+        for tool in v:
+            if tool not in seen:
+                seen.add(tool)
+                unique_tools.append(tool)
+        return unique_tools
+
+    class Config:
+        use_enum_values = True
+
+
+class AgentInfo(BaseModel):
+    """Schema de resposta para um agente"""
+
+    id: str = Field(..., description="ID do agente")
+    name: str = Field(..., description="Nome do agente")
+    specialization: AgentSpecialization = Field(
+        ..., description="Especialização do agente"
+    )
+    instructions: str = Field(..., description="Instruções do agente")
+    tools: List[AgentTool] = Field(
+        ..., description="Lista de ferramentas/integrações"
+    )
+
+    class Config:
+        use_enum_values = True
 
 class SendMessage(BaseModel):
     """Schema para envio de mensagens via WhatsApp"""
