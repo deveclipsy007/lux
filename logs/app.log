@@ -1,0 +1,10 @@
+2025-08-25 10:15:36 | INFO     | __main__:setup_logging:146 - Sistema de logging configurado
+2025-08-25 10:15:36 | INFO     | __main__:main:950 - 🚀 Iniciando servidor...
+2025-08-25 10:15:36 | INFO     | __main__:lifespan:154 - 🚀 Iniciando Agno SDK Agent Generator Backend
+2025-08-25 10:15:36 | INFO     | __main__:lifespan:158 - Diretório de agentes criado: generated_agents
+2025-08-25 10:15:36 | INFO     | services.evolution:__init__:73 - 📱 EvolutionService inicializado - Base URL: https://evolution.agentecortex.com
+2025-08-25 10:15:38 | DEBUG    | services.evolution:_make_request:139 - 🌐 GET /instance/fetchInstances - Tentativa 1
+2025-08-25 10:15:38 | DEBUG    | services.evolution:_make_request:145 - 📡 200 /instance/fetchInstances - 0.69s
+2025-08-25 10:15:38 | INFO     | services.evolution:test_connection:906 - ✅ Conexão com Evolution API OK
+2025-08-25 10:15:38 | INFO     | __main__:lifespan:164 - ✅ Conexão com Evolution API testada
+2025-08-25 10:15:38 | INFO     | __main__:lifespan:168 - 🟢 Aplicação pronta para receber requisições

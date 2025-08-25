@@ -1,0 +1,276 @@
+# Railway Configuration for Evolution API
+# Deploy automatizado com configurações otimizadas
+# Autor: AgnoMaster - Evolution API Expert
+# Data: 2025-01-24
+
+[build]
+# Comando de build
+build = "pip install -r requirements.txt"
+
+# Diretório de build
+workdir = "."
+
+# Dockerfile customizado
+dockerfile = "docker/Dockerfile"
+
+[deploy]
+# Comando de start
+start = "uvicorn main:app --host 0.0.0.0 --port $PORT --workers 4"
+
+# Health check
+health_check = "/health"
+
+# Timeout de deploy (em segundos)
+timeout = 300
+
+# Restart policy
+restart_policy = "always"
+
+[services.evolution-api]
+# Configurações do serviço principal
+source = "."
+builder = "dockerfile"
+
+# Variáveis de ambiente
+[services.evolution-api.variables]
+ENVIRONMENT = "production"
+DEBUG = "false"
+WORKERS = "4"
+LOG_LEVEL = "INFO"
+LOG_FORMAT = "json"
+ENABLE_METRICS = "true"
+ENABLE_TRACING = "true"
+RATE_LIMIT_REQUESTS = "100"
+RATE_LIMIT_WINDOW = "60"
+JWT_ALGORITHM = "HS256"
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = "30"
+JWT_REFRESH_TOKEN_EXPIRE_DAYS = "7"
+CORS_ORIGINS = "*"
+CORS_METHODS = "GET,POST,PUT,DELETE,OPTIONS,PATCH"
+CORS_HEADERS = "*"
+CORS_CREDENTIALS = "true"
+WS_MAX_CONNECTIONS = "1000"
+WS_CONNECTION_TIMEOUT = "60"
+MAX_FILE_SIZE = "50"
+FORCE_HTTPS = "true"
+SECURITY_HEADERS = "true"
+
+# Configurações de recursos
+[services.evolution-api.resources]
+# CPU (em millicores)
+cpu = 1000
+
+# Memória (em MB)
+memory = 2048
+
+# Disco (em MB)
+disk = 5120
+
+# Configurações de rede
+[services.evolution-api.networking]
+# Porta interna
+port = 8000
+
+# Domínio customizado (opcional)
+# custom_domain = "api.yourdomain.com"
+
+# Configurações de scaling
+[services.evolution-api.scaling]
+# Número mínimo de instâncias
+min_instances = 1
+
+# Número máximo de instâncias
+max_instances = 5
+
+# CPU threshold para scaling (em %)
+cpu_threshold = 70
+
+# Memory threshold para scaling (em %)
+memory_threshold = 80
+
+# Configurações de banco de dados PostgreSQL
+[services.postgres]
+source = "postgres:15"
+
+[services.postgres.variables]
+POSTGRES_DB = "evolution_api"
+POSTGRES_USER = "evolution"
+# POSTGRES_PASSWORD será definida via Railway UI por segurança
+
+[services.postgres.resources]
+cpu = 500
+memory = 1024
+disk = 10240
+
+# Configurações de Redis
+[services.redis]
+source = "redis:7"
+
+[services.redis.variables]
+# REDIS_PASSWORD será definida via Railway UI por segurança
+REDIS_MAXMEMORY = "512mb"
+REDIS_MAXMEMORY_POLICY = "allkeys-lru"
+
+[services.redis.resources]
+cpu = 250
+memory = 512
+disk = 1024
+
+# Configurações de monitoramento (opcional)
+[services.prometheus]
+source = "prom/prometheus:latest"
+builder = "docker"
+
+[services.prometheus.variables]
+PROMETHEUS_RETENTION_TIME = "30d"
+PROMETHEUS_RETENTION_SIZE = "5GB"
+
+[services.prometheus.resources]
+cpu = 500
+memory = 1024
+disk = 5120
+
+# Configurações de observabilidade
+[observability]
+# Logs
+logs = true
+log_level = "info"
+
+# Métricas
+metrics = true
+metrics_port = 9090
+
+# Tracing
+tracing = true
+tracing_endpoint = "jaeger"
+
+# Health checks
+[health_checks]
+# HTTP health check
+http = "/health"
+interval = "30s"
+timeout = "10s"
+retries = 3
+
+# TCP health check
+tcp = 8000
+
+# Configurações de backup
+[backup]
+# Backup automático do banco
+database = true
+schedule = "0 2 * * *"  # Todo dia às 2h
+retention = "7d"
+
+# Backup de uploads
+files = true
+path = "./uploads"
+
+# Configurações de segurança
+[security]
+# HTTPS obrigatório
+force_https = true
+
+# Headers de segurança
+security_headers = true
+
+# Rate limiting
+rate_limiting = true
+
+# DDoS protection
+ddos_protection = true
+
+# Configurações de CI/CD
+[ci_cd]
+# Deploy automático no push para main
+auto_deploy = true
+branch = "main"
+
+# Testes antes do deploy
+run_tests = true
+test_command = "pytest tests/ -v"
+
+# Build cache
+cache = true
+cache_key = "evolution-api-v1"
+
+# Configurações de ambiente
+[environments]
+
+# Desenvolvimento
+[environments.development]
+variables = { DEBUG = "true", LOG_LEVEL = "DEBUG", WORKERS = "1" }
+resources = { cpu = 500, memory = 1024 }
+
+# Staging
+[environments.staging]
+variables = { DEBUG = "false", LOG_LEVEL = "INFO", WORKERS = "2" }
+resources = { cpu = 750, memory = 1536 }
+
+# Produção
+[environments.production]
+variables = { DEBUG = "false", LOG_LEVEL = "WARNING", WORKERS = "4" }
+resources = { cpu = 1000, memory = 2048 }
+
+# Configurações de notificação
+[notifications]
+# Slack webhook para notificações de deploy
+# slack_webhook = "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+
+# Email para alertas críticos
+# email = "admin@yourdomain.com"
+
+# Discord webhook
+# discord_webhook = "https://discord.com/api/webhooks/YOUR/WEBHOOK"
+
+# Configurações de domínio
+[domains]
+# Domínio principal
+# primary = "api.yourdomain.com"
+
+# Domínios alternativos
+# aliases = ["evolution-api.yourdomain.com", "whatsapp-api.yourdomain.com"]
+
+# Certificado SSL automático
+ssl = "auto"
+
+# Configurações de CDN
+[cdn]
+# Habilitar CDN para assets estáticos
+enabled = true
+
+# Cache TTL
+ttl = "1h"
+
+# Compressão
+compression = true
+
+# Configurações de monitoramento avançado
+[monitoring]
+# Uptime monitoring
+uptime = true
+uptime_interval = "1m"
+
+# Performance monitoring
+performance = true
+apm = true
+
+# Error tracking
+error_tracking = true
+
+# Alertas
+[alerts]
+# CPU alto
+cpu_threshold = 80
+
+# Memória alta
+memory_threshold = 85
+
+# Disco cheio
+disk_threshold = 90
+
+# Response time alto
+response_time_threshold = "2s"
+
+# Error rate alto
+error_rate_threshold = 5  # 5%

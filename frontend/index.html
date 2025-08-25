@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Gerador de Agentes SDK com integração ao WhatsApp via Evolution API">
+    <title>Agno SDK Agent Generator</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Top Navigation -->
+    <header class="top-nav" role="banner">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <div class="nav-icon">🤖</div>
+                <h1 class="nav-title">Agno SDK Agent Generator</h1>
+            </div>
+        </div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tab-nav" role="navigation" aria-label="Navegação principal">
+        <div class="tab-container">
+            <button class="tab-button active" data-section="page-create" aria-pressed="true">
+                <span class="tab-icon">✨</span>
+                <span class="tab-label">Criar Agente</span>
+            </button>
+            <button class="tab-button" data-section="page-agents" aria-pressed="false">
+                <span class="tab-icon">🤖</span>
+                <span class="tab-label">Meus Agentes</span>
+            </button>
+            <button class="tab-button" data-section="page-logs" aria-pressed="false">
+                <span class="tab-icon">📊</span>
+                <span class="tab-label">Logs</span>
+            </button>
+            <button class="tab-button" data-section="page-settings" aria-pressed="false">
+                <span class="tab-icon">⚙️</span>
+                <span class="tab-label">Configurações</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content" role="main">
+        <!-- Seção 1: Criar Agente -->
+        <section id="page-create" class="page-section active" aria-labelledby="create-title">
+            <div class="section-container">
+                <div class="section-card">
+                    <header class="card-header">
+                        <h2 id="create-title" class="card-title">Criar Agente</h2>
+                        <p class="card-description">Configure seu agente personalizado com instruções e integrações</p>
+                        <div class="status-badges" aria-live="polite"></div>
+                    </header>
+
+                    <form class="agent-form" id="agent-form" novalidate>
+                        <!-- Nome do Agente -->
+                        <div class="form-group">
+                            <div class="input-wrapper">
+                                <input 
+                                    type="text" 
+                                    id="agent_name" 
+                                    name="agent_name" 
+                                    class="form-input" 
+                                    required 
+                                    maxlength="40"
+                                    aria-describedby="agent_name_help agent_name_error"
+                                />
+                                <label for="agent_name" class="form-label">Nome do agente</label>
+                                <div class="input-hint" id="agent_name_help">3-40 caracteres, apenas letras, números, hífen e underscore</div>
+                                <div class="input-error" id="agent_name_error" role="alert" aria-live="polite"></div>
+                            </div>
+                        </div>
+
+                        <!-- Instruções -->
+                        <div class="form-group">
+                            <div class="input-wrapper">
+                                <textarea 
+                                    id="instructions" 
+                                    name="instructions" 
+                                    class="form-textarea" 
+                                    required
+                                    rows="6"
+                                    aria-describedby="instructions_help instructions_error instructions_count"
+                                ></textarea>
+                                <label for="instructions" class="form-label">Instruções (system prompt)</label>
+                                <div class="input-hint" id="instructions_help">Descreva o comportamento e especialidade do seu agente</div>
+                                <div class="char-counter" id="instructions_count" aria-live="polite">
+                                    <span class="current-count">0</span> / <span class="min-count">80</span> caracteres mínimos
+                                </div>
+                                <div class="input-error" id="instructions_error" role="alert" aria-live="polite"></div>
+                            </div>
+                        </div>
+
+                        <!-- Especialização -->
+                        <div class="form-group">
+                            <div class="input-wrapper">
+                                <select 
+                                    id="specialization" 
+                                    name="specialization" 
+                                    class="form-select" 
+                                    required
+                                    aria-describedby="specialization_help specialization_error"
+                                >
+                                    <option value="" disabled selected>Selecione uma especialização</option>
+                                    <option value="Atendimento">Atendimento ao Cliente</option>
+                                    <option value="Agendamento">Agendamento e Reservas</option>
+                                    <option value="Vendas">Vendas e Conversão</option>
+                                    <option value="Suporte">Suporte Técnico</option>
+                                    <option value="Custom">Personalizado</option>
+                                </select>
+                                <label for="specialization" class="form-label">Especialização</label>
+                                <div class="input-hint" id="specialization_help">Escolha o tipo de agente que melhor se adapta ao seu caso de uso</div>
+                                <div class="input-error" id="specialization_error" role="alert" aria-live="polite"></div>
+                            </div>
+                        </div>
+
+                        <!-- Tools/Integrações -->
+                        <div class="form-group">
+                            <fieldset class="checkbox-group">
+                                <legend class="form-label">Integrações (tools)</legend>
+                                <div class="input-hint">Selecione as integrações que seu agente utilizará</div>
+                                
+                                <div class="checkbox-list">
+                                    <label class="checkbox-item">
+                                        <input type="checkbox" name="tools" value="whatsapp" class="checkbox-input" />
+                                        <span class="checkbox-custom" aria-hidden="true"></span>
+                                        <span class="checkbox-label">WhatsApp (Evolution API)</span>
+                                    </label>
+                                    
+                                    <label class="checkbox-item">
+                                        <input type="checkbox" name="tools" value="email" class="checkbox-input" />
+                                        <span class="checkbox-custom" aria-hidden="true"></span>
+                                        <span class="checkbox-label">E-mail</span>
+                                    </label>
+                                    
+                                    <label class="checkbox-item">
+                                        <input type="checkbox" name="tools" value="calendar" class="checkbox-input" />
+                                        <span class="checkbox-custom" aria-hidden="true"></span>
+                                        <span class="checkbox-label">Google Calendar</span>
+                                    </label>
+                                    
+                                    <label class="checkbox-item">
+                                        <input type="checkbox" name="tools" value="webhooks" class="checkbox-input" />
+                                        <span class="checkbox-custom" aria-hidden="true"></span>
+                                        <span class="checkbox-label">HTTP Webhooks</span>
+                                    </label>
+                                    
+                                    <label class="checkbox-item">
+                                        <input type="checkbox" name="tools" value="database" class="checkbox-input" />
+                                        <span class="checkbox-custom" aria-hidden="true"></span>
+                                        <span class="checkbox-label">Banco de dados</span>
+                                    </label>
+                                </div>
+                                <div class="input-error" id="tools_error" role="alert" aria-live="polite"></div>
+                            </fieldset>
+                        </div>
+
+                        <!-- Ações -->
+                        <div class="form-actions">
+                            <button type="button" id="btn-preview-agent-schema" class="button button-secondary">
+                                <span class="button-icon">👁️</span>
+                                <span class="button-text">Pré-visualizar Esquema</span>
+                            </button>
+                            
+                            <button type="button" id="btn-save-draft" class="button button-secondary">
+                                <span class="button-icon">💾</span>
+                                <span class="button-text">Salvar Rascunho</span>
+                            </button>
+                            
+                            <button type="submit" id="btn-continue" class="button button-primary">
+                                <span class="button-icon">→</span>
+                                <span class="button-text">Continuar</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Card de Geração de Código (oculto inicialmente) -->
+                <div class="section-card code-generation-card" id="code-generation-card" style="display: none;">
+                    <header class="card-header">
+                        <h2 class="card-title">Gerar Código (Agno SDK)</h2>
+                        <p class="card-description">Código Python gerado com base nas suas configurações</p>
+                    </header>
+
+                    <div class="code-generation-content">
+                        <div class="agent-summary">
+                            <h3 class="summary-title">Resumo do Agente</h3>
+                            <div id="agent-summary-content" class="summary-content"></div>
+                        </div>
+
+                        <div class="code-editor">
+                            <div class="editor-tabs" role="tablist" aria-label="Arquivos gerados">
+                                <button class="editor-tab active" data-file="main.py" role="tab" aria-selected="true">main.py</button>
+                                <button class="editor-tab" data-file="agent.py" role="tab" aria-selected="false">agent.py</button>
+                                <button class="editor-tab" data-file="evolution.py" role="tab" aria-selected="false">services/evolution.py</button>
+                            </div>
+                            
+                            <div class="editor-content">
+                                <pre id="code-display" class="code-block" role="tabpanel" aria-label="Código gerado"><code>// Clique em "Gerar Código" para ver os arquivos</code></pre>
+                                <div class="editor-actions">
+                                    <button type="button" class="button button-small" id="btn-copy-code">
+                                        <span class="button-icon">📋</span>
+                                        <span class="button-text">Copiar</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="generation-actions">
+                            <button type="button" id="btn-generate-code" class="button button-accent">
+                                <span class="button-icon">⚡</span>
+                                <span class="button-text">Gerar Código</span>
+                            </button>
+                            
+                            <button type="button" id="btn-download-zip" class="button button-secondary" disabled>
+                                <span class="button-icon">📦</span>
+                                <span class="button-text">Baixar ZIP</span>
+                            </button>
+                            
+                            <button type="button" id="btn-materialize-server" class="button button-secondary" disabled>
+                                <span class="button-icon">🚀</span>
+                                <span class="button-text">Materializar no Servidor</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção 2: Meus Agentes -->
+        <section id="page-agents" class="page-section" aria-labelledby="agents-title">
+            <div class="section-container">
+                <div class="section-card">
+                    <header class="card-header">
+                        <h2 id="agents-title" class="card-title">Meus Agentes</h2>
+                        <p class="card-description">Gerencie seus agentes criados e suas integrações</p>
+                    </header>
+
+                    <div class="agents-grid" id="agents-grid">
+                        <!-- Skeleton Loaders -->
+                        <div class="skeleton-loader">
+                            <div class="skeleton-card">
+                                <div class="skeleton-header"></div>
+                                <div class="skeleton-content"></div>
+                                <div class="skeleton-actions"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção 3: Logs -->
+        <section id="page-logs" class="page-section" aria-labelledby="logs-title">
+            <div class="section-container">
+                <div class="section-card">
+                    <header class="card-header">
+                        <h2 id="logs-title" class="card-title">Logs</h2>
+                        <p class="card-description">Console de logs em tempo real com filtros</p>
+                    </header>
+
+                    <div class="logs-controls">
+                        <div class="filter-group">
+                            <select id="log-level" class="form-select" aria-label="Filtrar por nível">
+                                <option value="">Todos os níveis</option>
+                                <option value="INFO">INFO</option>
+                                <option value="WARN">WARN</option>
+                                <option value="ERROR">ERROR</option>
+                            </select>
+                            
+                            <select class="form-select" aria-label="Filtrar por origem">
+                                <option value="">Todas as origens</option>
+                                <option value="frontend">Frontend</option>
+                                <option value="backend">Backend</option>
+                                <option value="evolution">Evolution API</option>
+                            </select>
+                            
+                            <input type="search" id="log-search" class="form-input" placeholder="Buscar nos logs..." aria-label="Buscar nos logs" />
+                        </div>
+                        
+                        <div class="control-group">
+                            <button type="button" class="button button-small" id="btn-pause-logs" aria-pressed="false">
+                                <span class="button-icon">⏸️</span>
+                                <span class="button-text">Pausar</span>
+                            </button>
+                            
+                            <button type="button" class="button button-small" id="btn-clear-logs">
+                                <span class="button-icon">🗑️</span>
+                                <span class="button-text">Limpar</span>
+                            </button>
+                            
+                            <button type="button" class="button button-small" id="btn-export-logs">
+                                <span class="button-icon">📄</span>
+                                <span class="button-text">Exportar .txt</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="log-console" id="log-console" role="log" aria-live="polite" aria-label="Console de logs">
+                        <div class="log-entry log-info">
+                            <span class="log-timestamp">2025-01-24 10:00:00</span>
+                            <span class="log-level log-level-info">INFO</span>
+                            <span class="log-source">frontend</span>
+                            <span class="log-message">Aplicação inicializada</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção 4: Configurações -->
+        <section id="page-settings" class="page-section" aria-labelledby="settings-title">
+            <div class="section-container">
+                <!-- Card Integrações -->
+                <div class="section-card">
+                    <header class="card-header">
+                        <h2 id="settings-title" class="card-title">Configurações de Integrações</h2>
+                        <p class="card-description">Ative ou desative as integrações disponíveis</p>
+                    </header>
+
+                    <div class="integrations-list">
+                        <div class="integration-item">
+                            <div class="integration-info">
+                                <div class="integration-icon">📱</div>
+                                <div class="integration-details">
+                                    <h3 class="integration-title">WhatsApp via Evolution API</h3>
+                                    <p class="integration-desc">Conecte seu agente ao WhatsApp para mensagens automáticas</p>
+                                </div>
+                            </div>
+                            <label class="toggle-switch" aria-label="Ativar WhatsApp">
+                                <input type="checkbox" class="toggle-input" data-integration="whatsapp" />
+                                <span class="toggle-slider" aria-hidden="true"></span>
+                            </label>
+                        </div>
+
+                        <div class="integration-item">
+                            <div class="integration-info">
+                                <div class="integration-icon">💳</div>
+                                <div class="integration-details">
+                                    <h3 class="integration-title">APIs de Pagamento</h3>
+                                    <p class="integration-desc">Integre com processadores de pagamento</p>
+                                </div>
+                            </div>
+                            <label class="toggle-switch" aria-label="Ativar APIs de Pagamento">
+                                <input type="checkbox" class="toggle-input" data-integration="payments" />
+                                <span class="toggle-slider" aria-hidden="true"></span>
+                            </label>
+                        </div>
+
+                        <div class="integration-item">
+                            <div class="integration-info">
+                                <div class="integration-icon">📅</div>
+                                <div class="integration-details">
+                                    <h3 class="integration-title">Plataformas de Agendamento</h3>
+                                    <p class="integration-desc">Sincronize com calendários e sistemas de agendamento</p>
+                                </div>
+                            </div>
+                            <label class="toggle-switch" aria-label="Ativar Plataformas de Agendamento">
+                                <input type="checkbox" class="toggle-input" data-integration="scheduling" />
+                                <span class="toggle-slider" aria-hidden="true"></span>
+                            </label>
+                        </div>
+
+                        <div class="integration-item">
+                            <div class="integration-info">
+                                <div class="integration-icon">🎯</div>
+                                <div class="integration-details">
+                                    <h3 class="integration-title">CRM e Sistemas de Vendas</h3>
+                                    <p class="integration-desc">Conecte com ferramentas de CRM e vendas</p>
+                                </div>
+                            </div>
+                            <label class="toggle-switch" aria-label="Ativar CRM">
+                                <input type="checkbox" class="toggle-input" data-integration="crm" />
+                                <span class="toggle-slider" aria-hidden="true"></span>
+                            </label>
+                        </div>
+
+                        <div class="integration-item">
+                            <div class="integration-info">
+                                <div class="integration-icon">🎧</div>
+                                <div class="integration-details">
+                                    <h3 class="integration-title">Sistemas de Atendimento</h3>
+                                    <p class="integration-desc">Integre com sistemas de help desk e suporte</p>
+                                </div>
+                            </div>
+                            <label class="toggle-switch" aria-label="Ativar Sistemas de Atendimento">
+                                <input type="checkbox" class="toggle-input" data-integration="support" />
+                                <span class="toggle-slider" aria-hidden="true"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card Conexões -->
+                <div class="section-card">
+                    <header class="card-header">
+                        <h2 class="card-title">Conexões</h2>
+                        <p class="card-description">Configure conexões com APIs externas</p>
+                    </header>
+
+                    <div class="form-group">
+                        <div class="input-wrapper">
+                            <input 
+                                type="url" 
+                                id="api-base-url" 
+                                class="form-input" 
+                                value="http://localhost:8000" 
+                                readonly
+                            />
+                            <label for="api-base-url" class="form-label">API Base URL</label>
+                        </div>
+                        <button type="button" id="btn-test-connection" class="button button-accent">
+                            <span class="button-icon">🔌</span>
+                            <span class="button-text">Testar Conexão</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Card Evolution API -->
+                <div class="section-card">
+                    <header class="card-header">
+                        <h2 class="card-title">Evolution API (WhatsApp)</h2>
+                        <p class="card-description">Configure as credenciais da Evolution API para integração com WhatsApp</p>
+                    </header>
+
+                    <div class="settings-form">
+                        <div class="form-group">
+                            <div class="input-wrapper">
+                                <input 
+                                    type="url" 
+                                    id="evolution-base-url" 
+                                    class="form-input" 
+                                    placeholder="https://evolution.agentecortex.com"
+                                    value="https://evolution.agentecortex.com"
+                                />
+                                <label for="evolution-base-url" class="form-label">Evolution Base URL</label>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <div class="input-wrapper">
+                                <input 
+                                    type="password" 
+                                    id="evolution-api-key" 
+                                    class="form-input" 
+                                    placeholder="Sua API Key da Evolution"
+                                    value="e464af0bf64bbd059aa777d5cded286e"
+                                />
+                                <label for="evolution-api-key" class="form-label">Evolution API Key</label>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <div class="input-wrapper">
+                                <input 
+                                    type="text" 
+                                    id="evolution-instance-name" 
+                                    class="form-input" 
+                                    placeholder="agno-agent"
+                                    value="agno-agent"
+                                />
+                                <label for="evolution-instance-name" class="form-label">Nome Padrão da Instância</label>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" id="btn-test-evolution" class="button button-accent">
+                                <span class="button-icon">🔌</span>
+                                <span class="button-text">Testar Evolution API</span>
+                            </button>
+                            <button type="button" id="btn-save-evolution" class="button">
+                                <span class="button-icon">💾</span>
+                                <span class="button-text">Salvar Credenciais</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card Aparência -->
+                <div class="section-card">
+                    <header class="card-header">
+                        <h2 class="card-title">Aparência</h2>
+                        <p class="card-description">Personalize a interface do aplicativo</p>
+                    </header>
+
+                    <div class="appearance-controls">
+                        <div class="control-row">
+                            <label class="control-label">Escala da Fonte</label>
+                            <div class="font-scale-controls">
+                                <button type="button" class="button button-small" id="btn-font-decrease" aria-label="Diminuir fonte">-</button>
+                                <span class="font-scale-value" id="font-scale-value">0</span>
+                                <button type="button" class="button button-small" id="btn-font-increase" aria-label="Aumentar fonte">+</button>
+                            </div>
+                        </div>
+                        
+                        <div class="control-row">
+                            <label class="control-label">Reduzir Movimento</label>
+                            <label class="toggle-switch" aria-label="Reduzir animações">
+                                <input type="checkbox" class="toggle-input" id="reduce-motion" />
+                                <span class="toggle-slider" aria-hidden="true"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal Preview JSON -->
+    <div id="modal-preview-json" class="modal" role="dialog" aria-labelledby="modal-preview-title" aria-hidden="true">
+        <div class="modal-backdrop" aria-label="Fechar modal"></div>
+        <div class="modal-content">
+            <header class="modal-header">
+                <h2 id="modal-preview-title" class="modal-title">Pré-visualização do Esquema</h2>
+                <button type="button" class="modal-close" aria-label="Fechar modal">✕</button>
+            </header>
+            <div class="modal-body">
+                <pre id="json-preview" class="json-display"><code></code></pre>
+                <button type="button" id="btn-copy-json" class="button button-accent">
+                    <span class="button-icon">📋</span>
+                    <span class="button-text">Copiar JSON</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal QR Code -->
+    <div id="modal-qr" class="modal" role="dialog" aria-labelledby="modal-qr-title" aria-hidden="true">
+        <div class="modal-backdrop" aria-label="Fechar modal"></div>
+        <div class="modal-content">
+            <header class="modal-header">
+                <h2 id="modal-qr-title" class="modal-title">QR Code - WhatsApp</h2>
+                <button type="button" class="modal-close" aria-label="Fechar modal">✕</button>
+            </header>
+            <div class="modal-body">
+                <div class="qr-container">
+                    <div class="qr-placeholder" id="qr-display">
+                        <div class="qr-pattern"></div>
+                        <p class="qr-label">QR Code será exibido aqui</p>
+                    </div>
+                    <p class="qr-instructions">Escaneie este código com seu WhatsApp para conectar a instância</p>
+                </div>
+                <div class="qr-actions">
+                    <button type="button" id="btn-open-qr-modal" class="button button-accent">
+                        <span class="button-icon">🔄</span>
+                        <span class="button-text">Atualizar QR</span>
+                    </button>
+                    <button type="button" id="btn-send-test" class="button button-secondary">
+                        <span class="button-icon">💬</span>
+                        <span class="button-text">Enviar Teste</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container" aria-live="assertive" aria-atomic="true"></div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" aria-hidden="true">
+        <div class="loading-spinner" aria-label="Carregando..."></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

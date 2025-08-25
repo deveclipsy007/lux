@@ -1,0 +1,2 @@
+2025-08-25 09:09:42 | ERROR    | services.evolution:_make_request:181 - ❌ Erro de conexão com Evolution API: [Errno 11001] getaddrinfo failed - Esgotadas tentativas
+2025-08-25 09:09:42 | ERROR    | services.evolution:test_connection:910 - ❌ Falha na conexão com Evolution API: Erro de conexão com Evolution API: [Errno 11001] getaddrinfo failed

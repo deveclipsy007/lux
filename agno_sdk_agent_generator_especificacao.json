@@ -1,0 +1,280 @@
+{
+  "role": "Senior Full-Stack Engineer",
+  "language": "pt-BR",
+  "task": "Gerar um projeto completo (HTML, CSS e JavaScript vanilla + backend Python FastAPI com Agno) que constrói um GERADOR DE AGENTES SDK com integração ao WhatsApp via Evolution API.",
+  "project": {
+    "name": "Agno SDK Agent Generator",
+    "description": "Aplicação web com estética iOS (dark/cinza) que permite criar um agente (nome, instruções, especialização e integrações/tools), gerar o código do agente (SDK Agno em Python) e integrar/operar o WhatsApp via Evolution API."
+  },
+  "constraints": [
+    "Não usar Docker.",
+    "Frontend em HTML/CSS/JS puro (sem frameworks).",
+    "Backend em Python (FastAPI + Agno).",
+    "Seguir padrões de acessibilidade e componentes no estilo iOS (dark).",
+    "Chaves/API e segredos apenas via variáveis de ambiente (.env).",
+    "CORS configurado apenas para o host do frontend em dev.",
+    "Logs e erros devem ser visíveis via endpoint protegido e arquivo local."
+  ],
+  "sources_of_truth": [
+    "Documentação oficial do Agno (para criação/execução de agentes).",
+    "Documentação oficial do Evolution API (fluxos: criar instância, exibir QR, conectar, enviar/receber mensagens).",
+    "Padrões de design iOS (tipografia SF Pro, cantos 20px, blur sutil, hierarquia de cinzas)."
+  ],
+  "style_guide": {
+    "theme": "iOS dark graphite",
+    "colors": {
+      "background": "#0B0B0F",
+      "surface": "#1C1C1E",
+      "surfaceAlt": "#2C2C2E",
+      "stroke": "#3A3A3C",
+      "textPrimary": "#F2F2F7",
+      "textSecondary": "#C7C7CC",
+      "accent": "#0A84FF",
+      "success": "#32D74B",
+      "warning": "#FFD60A",
+      "danger": "#FF453A"
+    },
+    "typography": {
+      "fontFamily": "system-ui, -apple-system, 'SF Pro Text', 'SF Pro Display', Inter, Roboto, Arial, sans-serif",
+      "sizes": { "h1": "28px", "h2": "22px", "h3": "18px", "body": "15px", "caption": "13px" }
+    },
+    "components": [
+      "Top Nav com título e ícone minimalista.",
+      "Cards com bordas arredondadas (20px), sombras suaves e separadores sutis.",
+      "Botões com estados: default, hover, pressed, disabled. Tamanho 40px de altura, pill.",
+      "Inputs com label flutuante, placeholder sutil, foco com glow leve.",
+      "Toggle iOS, Select, Badge, Stepper, Progress bar, Toast/Sheet.",
+      "Modal para QR Code (integração WhatsApp)."
+    ],
+    "micro_interactions": [
+      "Transições 150–220ms (opacity/transform).",
+      "Skeleton loaders nas listas.",
+      "Haptic/sonoro opcional desativado por padrão."
+    ]
+  },
+  "frontend": {
+    "files": ["frontend/index.html", "frontend/styles.css", "frontend/app.js"],
+    "sections": [
+      {
+        "id": "sessao-1",
+        "title": "Criar Agente",
+        "goal": "Coletar dados do agente e validar.",
+        "fields": [
+          { "name": "agent_name", "label": "Nome do agente", "type": "text", "required": true, "rules": "3–40 chars, alfanumérico e hífen/underscore" },
+          { "name": "instructions", "label": "Instruções (system prompt)", "type": "textarea", "required": true, "rules": "mín. 80 chars" },
+          { "name": "specialization", "label": "Especialização", "type": "select", "options": ["Atendimento", "Agendamento", "Vendas", "Suporte", "Custom"], "required": true },
+          { "name": "tools", "label": "Integrações (tools)", "type": "checkbox-group", "options": ["WhatsApp (Evolution)", "E-mail", "Google Calendar", "HTTP Webhooks", "Banco de dados"], "required": true }
+        ],
+        "actions": [
+          { "id": "preview_agent_schema", "label": "Pré-visualizar Esquema", "effect": "gera JSON do agente local e exibe em modal" },
+          { "id": "save_draft", "label": "Salvar Rascunho", "effect": "localStorage" },
+          { "id": "continue", "label": "Continuar", "effect": "vai para Sessão 2" }
+        ]
+      },
+      {
+        "id": "sessao-2",
+        "title": "Gerar Código (Agno SDK)",
+        "goal": "Gerar código Python do agente com base nas escolhas.",
+        "panes": [
+          "Resumo do agente (lado esquerdo).",
+          "Editor somente-leitura com arquivos (main.py, agent.py, services/evolution.py etc.).",
+          "Botões: Copiar arquivo, Baixar zip, Enviar ao backend para materializar."
+        ],
+        "actions": [
+          { "id": "generate_code", "label": "Gerar Código", "effect": "chama POST /api/agents/generate" },
+          { "id": "download_zip", "label": "Baixar ZIP", "effect": "baixa código gerado" },
+          { "id": "materialize_on_server", "label": "Materializar no Backend", "effect": "POST /api/agents/materialize" }
+        ]
+      },
+      {
+        "id": "sessao-3",
+        "title": "Integrações & WhatsApp",
+        "goal": "Conectar WhatsApp via Evolution API e testar mensagens.",
+        "steps": [
+          "Criar/selecionar instância de WhatsApp.",
+          "Exibir QR Code para pareamento.",
+          "Detectar status conectado.",
+          "Testar envio de mensagem para número de teste.",
+          "Exibir logs e eventos em tempo real."
+        ],
+        "ui": [
+          "Card 'Estado da Instância' (status: DESCONHECIDO, QR_ABERTO, CONECTANDO, CONECTADO).",
+          "Botão 'Criar Instância', 'Mostrar QR Code', 'Enviar Mensagem Teste'.",
+          "Console/Log (área rolável, monospace)."
+        ],
+        "actions": [
+          { "id": "create_instance", "label": "Criar Instância", "effect": "POST /api/wpp/instances" },
+          { "id": "show_qr", "label": "Mostrar QR Code", "effect": "GET /api/wpp/instances/{id}/qr -> abre modal" },
+          { "id": "send_test", "label": "Enviar Teste", "effect": "POST /api/wpp/messages" }
+        ]
+      }
+    ],
+    "behavior": {
+      "validation": "Bloquear avanço se campos obrigatórios faltarem; mostrar erros inline.",
+      "state": "Guardar rascunho no localStorage; restaurar ao carregar.",
+      "api_base": "window.API_BASE = 'http://localhost:8000';",
+      "security": "Sanitizar HTML; nunca injetar conteúdo não confiável; tratar CORS."
+    }
+  },
+  "backend": {
+    "files": [
+      "backend/main.py",
+      "backend/schemas.py",
+      "backend/models.py",
+      "backend/services/agno.py",
+      "backend/services/evolution.py",
+      "backend/services/generator.py",
+      "backend/logging.conf",
+      "backend/requirements.txt",
+      ".env.example",
+      "README.md"
+    ],
+    "stack": [
+      "Python 3.11+",
+      "FastAPI",
+      "Uvicorn",
+      "Agno (framework de agentes)",
+      "httpx/requests",
+      "pydantic",
+      "python-dotenv",
+      "loguru"
+    ],
+    "env_vars": [
+      "EVOLUTION_BASE_URL",
+      "EVOLUTION_API_KEY",
+      "EVOLUTION_DEFAULT_INSTANCE",
+      "AGNO_MODEL_PROVIDER",
+      "AGNO_MODEL_NAME",
+      "ALLOWED_ORIGINS",
+      "LOG_LEVEL"
+    ],
+    "schemas": {
+      "AgentCreate": { "agent_name": "str", "instructions": "str", "specialization": "str", "tools": ["str"] },
+      "AgentGeneratedFiles": { "files": [{ "path": "str", "content": "str" }] },
+      "WppInstance": { "instance_id": "str", "status": "str" },
+      "SendMessage": { "instance_id": "str", "to": "str", "message": "str" }
+    },
+    "endpoints": [
+      { "method": "POST", "path": "/api/agents/generate", "desc": "Gera arquivos do agente (Agno) com base no payload AgentCreate.", "returns": "AgentGeneratedFiles" },
+      { "method": "POST", "path": "/api/agents/materialize", "desc": "Salva os arquivos gerados no disco/virtual store para execução local.", "returns": "{ok: true}" },
+      { "method": "POST", "path": "/api/wpp/instances", "desc": "Cria/obtém instância no Evolution API.", "returns": "WppInstance" },
+      { "method": "GET", "path": "/api/wpp/instances/{instance_id}/qr", "desc": "Retorna imagem/base64 do QR Code para pareamento.", "returns": "{qr: base64, status: str}" },
+      { "method": "GET", "path": "/api/wpp/instances/{instance_id}/status", "desc": "Consulta status de conexão.", "returns": "WppInstance" },
+      { "method": "POST", "path": "/api/wpp/messages", "desc": "Envia mensagem de teste via Evolution API.", "returns": "{message_id: str, status: str}" },
+      { "method": "GET", "path": "/api/logs", "desc": "Streaming/consulta de logs (somente dev).", "returns": "text/event-stream ou JSON" }
+    ],
+    "services": {
+      "agno": "Funções utilitárias para instanciar/rodar agente conforme specialization e tools.",
+      "generator": "Templates Jinja/strings para compor main.py, agent.py, services/evolution.py.",
+      "evolution": "Wrapper HTTP para Evolution API (criar instância, obter QR, status, enviar mensagem)."
+    },
+    "notes": [
+      "Consultar documentação oficial do Evolution API para endpoints e payloads exatos.",
+      "Manter timeouts e retries nas chamadas externas.",
+      "Registrar erros detalhados (sem vazar segredos) e retornar mensagens amigáveis ao frontend."
+    ]
+  },
+  "integrations": {
+    "evolution_api": {
+      "flow": [
+        "POST para criar/recuperar instância (usar agent_name como base do id).",
+        "GET QR Code para parear.",
+        "Polling de status até CONECTADO.",
+        "POST de mensagem de teste para 'to' informado.",
+        "Expor webhooks (opcional) para receber mensagens e repassar ao agente."
+      ],
+      "security": [
+        "Usar AUTH com Bearer/Key no header.",
+        "Validar origem no webhook (se usado).",
+        "Nunca logar dados sensíveis (mas logar status/erros)."
+      ],
+      "ui_feedback": [
+        "Mostrar estado em tempo real (badge + barra de progresso).",
+        "Modal com QR (refresh se expirar).",
+        "Toasts de sucesso/erro."
+      ]
+    }
+  },
+  "user_flows": [
+    "Usuário preenche Sessão 1 → valida → continua.",
+    "Sessão 2: clica 'Gerar Código' → preview dos arquivos → pode baixar ZIP ou materializar no servidor.",
+    "Sessão 3: cria instância Evolution → abre QR → conecta → envia mensagem teste → vê logs."
+  ],
+  "acceptance_criteria": [
+    "UI dark iOS-like com tipografia e componentes descritos.",
+    "Validações de formulário impedem avanço indevido.",
+    "Geração de pelo menos 3 arquivos Python: main.py, agent.py, services/evolution.py.",
+    "Download de ZIP funcionando.",
+    "Criação de instância e exibição do QR Code em modal.",
+    "Envio de mensagem teste retorna status OK.",
+    "Logs acessíveis em dev.",
+    "Nenhum segredo exposto no bundle do frontend."
+  ],
+  "file_structure": {
+    "root": [
+      "frontend/index.html",
+      "frontend/styles.css",
+      "frontend/app.js",
+      "backend/main.py",
+      "backend/schemas.py",
+      "backend/models.py",
+      "backend/services/agno.py",
+      "backend/services/evolution.py",
+      "backend/services/generator.py",
+      "backend/logs/",
+      "backend/requirements.txt",
+      ".env.example",
+      "README.md"
+    ]
+  },
+  "frontend_api_contract": {
+    "generate_agent_request": {
+      "agent_name": "string",
+      "instructions": "string",
+      "specialization": "string",
+      "tools": ["string"]
+    },
+    "generate_agent_response": {
+      "files": [
+        { "path": "backend/main.py", "content": "str" },
+        { "path": "backend/agent.py", "content": "str" },
+        { "path": "backend/services/evolution.py", "content": "str" }
+      ]
+    },
+    "send_test_message_request": {
+      "instance_id": "string",
+      "to": "string (E.164)",
+      "message": "string"
+    }
+  },
+  "security": [
+    "Sanitização e escaping de todas as entradas.",
+    "Rate limit simples por IP no backend (dev: opcional).",
+    "Helmet-like headers no FastAPI (CSP mínima para dev).",
+    "CORS restrito ao host do frontend."
+  ],
+  "non_functional": {
+    "performance": "Carregamento inicial < 1s em dev; CSS crítico inline mínimo; lazy load de modais.",
+    "observability": "Log estruturado (JSON) + níveis; rastreio de chamadas Evolution.",
+    "accessibility": "Contrast ratio AA; navegação por teclado; aria-* em componentes interativos."
+  },
+  "prompts_de_geracao_de_codigo": {
+    "frontend/index.html": "Gere um HTML semanticamente correto com Top Nav, três sessões em cards iOS dark, modais (QR e Preview JSON), toasts e um painel de logs. Inclua containers e IDs exatos das seções e botões descritos.",
+    "frontend/styles.css": "Implemente tema iOS dark com variáveis CSS (cores do style_guide), componentes com radius 20px, sombras sutis, focus states claros, skeleton loaders e responsividade (mobile-first).",
+    "frontend/app.js": "Implemente validações, estado em localStorage, chamadas fetch aos endpoints, controle de modais e toasts, render de preview de arquivos, e polling de status do WhatsApp.",
+    "backend/main.py": "Crie app FastAPI com rotas definidas em backend.endpoints, CORS, leitura de .env, logging, e docstrings.",
+    "backend/services/generator.py": "Gere strings de arquivos Python (main/agent/services/evolution) com base no AgentCreate, prontos para materialização.",
+    "backend/services/agno.py": "Forneça helpers para instanciar/rodar agentes conforme specialization e tools.",
+    "backend/services/evolution.py": "Implemente client HTTP para Evolution API com funções: create_instance, get_qr, get_status, send_message (consultar docs oficiais para caminhos/payloads exatos)."
+  },
+  "dev_server": {
+    "frontend": "Servir via Live Server ou http-server na pasta frontend.",
+    "backend": "uvicorn backend.main:app --reload --port 8000"
+  },
+  "stretch_goals": [
+    "Webhook para receber mensagens e despachar ao agente Agno.",
+    "Console de conversas em tempo real dentro da Sessão 3.",
+    "Templates de especialização (Atendimento/Agendamento/Vendas) com prompts base."
+  ],
+  "ready": true
+}
