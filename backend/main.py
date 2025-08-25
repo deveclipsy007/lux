@@ -52,7 +52,7 @@ from services.generator import CodeGeneratorService
 from services.evolution import EvolutionService
 from services.agno import AgnoService
 from models import SystemEvent, EventType, app_store
-from db import AgentRepository, SystemEventRepository
+from db import AgentRepository, EventRepo
 
 # WebSocket imports (bypassing problematic modules)
 try:
@@ -104,7 +104,7 @@ settings = Settings()
 
 # Repositórios com persistência em banco de dados
 agent_repo = AgentRepository()
-event_repo = SystemEventRepository()
+event_repo = EventRepo()
 
 
 async def log_event(event_type: EventType, agent_id: str, data: Dict[str, Any]) -> None:
@@ -122,7 +122,7 @@ async def log_event(event_type: EventType, agent_id: str, data: Dict[str, Any]) 
 
     # Persiste no banco de dados
     try:
-        await event_repo.log_event(event)
+        await event_repo.create(event.to_dict())
     except Exception as e:
         logger.error(f"Erro ao registrar evento: {e}")
 
