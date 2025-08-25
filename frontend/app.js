@@ -46,7 +46,10 @@ const appState = {
     instanceName: 'agno-agent',
     connected: false
   },
-  
+
+  // Token de acesso à API
+  apiToken: '',
+
   // Estado dos agentes
   agents: [],
   
@@ -227,6 +230,7 @@ const StateManager = {
     Storage.save('agentDraft', appState.agentDraft);
     Storage.save('ui', appState.ui);
     Storage.save('agents', appState.agents);
+    Storage.save('apiToken', appState.apiToken);
   },
 
   /**
@@ -236,6 +240,7 @@ const StateManager = {
     appState.agentDraft = Storage.load('agentDraft', appState.agentDraft);
     appState.ui = Storage.load('ui', appState.ui);
     appState.agents = Storage.load('agents', appState.agents);
+    appState.apiToken = Storage.load('apiToken', appState.apiToken);
   },
 
   /**
@@ -751,22 +756,44 @@ const Validator = {
 // Cliente da API
 const ApiClient = {
   /**
+   * Retorna headers de autenticação
+   */
+  getAuthHeaders() {
+    const token = appState.apiToken || Storage.load('apiToken');
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+  },
+
+  /**
+   * Verifica erros de autenticação
+   */
+  checkAuth(response) {
+    if (response.status === 401) {
+      Navigation.switchSection('page-settings');
+      Toast.warning('Autenticação Necessária', 'Informe seu token de acesso nas Configurações.');
+      throw new Error('Não autenticado');
+    }
+  },
+
+  /**
    * Requisição base
    */
   async request(endpoint, options = {}) {
     const url = `${window.API_BASE}${endpoint}`;
     const config = {
+      ...options,
       headers: {
         'Content-Type': 'application/json',
-      },
-      ...options
+        ...this.getAuthHeaders(),
+        ...(options.headers || {})
+      }
     };
 
     try {
       Logger.log('info', 'api', `${config.method || 'GET'} ${endpoint}`);
-      
+
       const response = await fetch(url, config);
-      const data = await response.json();
+      this.checkAuth(response);
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(data.detail || `HTTP ${response.status}`);
@@ -1245,12 +1272,8 @@ const AgentManager = {
    */
   async createWhatsAppInstance(instanceName) {
     try {
-      // Usa o backend local ao invés da Evolution API diretamente
-      const response = await fetch(`${window.API_BASE}/api/wpp/instances`, {
+      const data = await ApiClient.request('/api/wpp/instances', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({
           instance_name: instanceName,
           webhook_url: `${window.API_BASE}/api/wpp/webhook`,
@@ -1258,12 +1281,6 @@ const AgentManager = {
         })
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Falha ao criar instância WhatsApp');
-      }
-
-      const data = await response.json();
       Logger.log('info', 'whatsapp', `Instância ${instanceName} criada com sucesso`);
       return data;
 
@@ -1279,28 +1296,14 @@ const AgentManager = {
    */
   async getQRCode(instanceName) {
     try {
-      // Usa o backend local ao invés da Evolution API diretamente
-      const response = await fetch(`${window.API_BASE}/api/wpp/instances/${instanceName}/qr`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
+      const data = await ApiClient.request(`/api/wpp/instances/${instanceName}/qr`);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Falha ao obter QR Code');
-      }
-
-      const data = await response.json();
-      
-      // O backend retorna { qr: "base64_string", status: "...", expires_at: "..." }
       if (data.qr) {
         return data.qr;
       } else {
         throw new Error('QR Code não disponível');
       }
-      
+
     } catch (error) {
       Logger.log('error', 'whatsapp', `Erro ao obter QR Code: ${error.message}`);
       throw error;
@@ -1317,7 +1320,10 @@ const AgentManager = {
 
     const checkStatus = async () => {
       try {
-        const response = await fetch(`${window.API_BASE}/api/wpp/instances/${instanceName}/status`);
+        const response = await fetch(`${window.API_BASE}/api/wpp/instances/${instanceName}/status`, {
+          headers: ApiClient.getAuthHeaders()
+        });
+        ApiClient.checkAuth(response);
 
         if (response.ok) {
           const data = await response.json();
@@ -1337,9 +1343,15 @@ const AgentManager = {
             const safeName = encodeURIComponent(instanceName);
             try {
               const [statusCheck, webhookCheck] = await Promise.all([
-                fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/status`),
-                fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/webhook`)
+                fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/status`, {
+                  headers: ApiClient.getAuthHeaders()
+                }),
+                fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/webhook`, {
+                  headers: ApiClient.getAuthHeaders()
+                })
               ]);
+              ApiClient.checkAuth(statusCheck);
+              ApiClient.checkAuth(webhookCheck);
 
               let statusOk = false;
               if (statusCheck.ok) {
@@ -1405,13 +1417,15 @@ const AgentManager = {
       const response = await fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/webhook`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...ApiClient.getAuthHeaders()
         },
         body: JSON.stringify({
           webhook_url: webhookUrl,
           events: ['messages.upsert', 'connection.update']
         })
       });
+      ApiClient.checkAuth(response);
       const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.status === 'success') {
@@ -2215,6 +2229,7 @@ const SettingsManager = {
     this.setupIntegrationToggles();
     this.setupConnectionTest();
     this.setupEvolutionAPIControls();
+    this.setupApiTokenControl();
     this.setupAppearanceControls();
     this.loadSettings();
   },
@@ -2295,6 +2310,18 @@ const SettingsManager = {
         });
       }
     });
+  },
+
+  /**
+   * Configura campo de token de acesso
+   */
+  setupApiTokenControl() {
+    const field = document.getElementById('api-token');
+    if (field) {
+      field.addEventListener('input', (e) => {
+        StateManager.updateState('apiToken', e.target.value);
+      });
+    }
   },
 
   /**
@@ -2480,6 +2507,12 @@ const SettingsManager = {
     if (reduceMotionToggle) {
       reduceMotionToggle.checked = ui.reduceMotion;
       this.applyMotionPreference(ui.reduceMotion);
+    }
+
+    // Carrega token de acesso
+    const tokenField = document.getElementById('api-token');
+    if (tokenField) {
+      tokenField.value = appState.apiToken || '';
     }
   }
 };

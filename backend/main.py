@@ -209,18 +209,14 @@ security = HTTPBearer(auto_error=False)
 
 async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Validação simples de token para endpoints protegidos"""
-    
-    # Em desenvolvimento, permite acesso sem token
-    if settings.log_level == "DEBUG" and not credentials:
-        return {"user": "dev", "scope": "admin"}
-    
+
     if not credentials or credentials.credentials != settings.api_secret:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token de acesso inválido",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     return {"user": "authenticated", "scope": "admin"}
 
 # Inicialização de serviços
@@ -289,13 +285,13 @@ async def health_check():
 
 
 @app.get("/api/agents", response_model=List[AgentInfo])
-async def list_agents():
+async def list_agents(current_user: Dict = Depends(get_current_user)):
     """Lista todos os agentes cadastrados."""
     return [agent.to_dict() for agent in agent_repo.list_agents()]
 
 
 @app.get("/api/agents/{agent_id}", response_model=AgentInfo)
-async def get_agent(agent_id: str):
+async def get_agent(agent_id: str, current_user: Dict = Depends(get_current_user)):
     """Retorna um agente específico."""
     agent = agent_repo.get_agent(agent_id)
     if not agent:
@@ -304,7 +300,7 @@ async def get_agent(agent_id: str):
 
 
 @app.post("/api/agents", response_model=AgentInfo, status_code=status.HTTP_201_CREATED)
-async def create_agent(agent_in: AgentCreate):
+async def create_agent(agent_in: AgentCreate, current_user: Dict = Depends(get_current_user)):
     """Cria um novo agente."""
     data = {
         "name": agent_in.agent_name,
@@ -317,7 +313,7 @@ async def create_agent(agent_in: AgentCreate):
 
 
 @app.put("/api/agents/{agent_id}", response_model=AgentInfo)
-async def update_agent(agent_id: str, agent_in: AgentUpdate):
+async def update_agent(agent_id: str, agent_in: AgentUpdate, current_user: Dict = Depends(get_current_user)):
     """Atualiza um agente existente."""
     update_data = {
         k: v
@@ -339,6 +335,7 @@ async def update_agent(agent_id: str, agent_in: AgentUpdate):
 async def delete_agent(
     agent_id: str,
     evolution_service: EvolutionService = Depends(get_evolution_service),
+    current_user: Dict = Depends(get_current_user),
 ):
     """Remove um agente e sua instância associada no Evolution API."""
 
