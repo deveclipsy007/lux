@@ -719,6 +719,16 @@ const ApiClient = {
   },
 
   /**
+   * Atualiza agente existente
+   */
+  async updateAgent(agentId, agentData) {
+    return this.request(`/api/agents/${agentId}`, {
+      method: 'PUT',
+      body: JSON.stringify(agentData)
+    });
+  },
+
+  /**
    * Cria instância do WhatsApp
    */
   async createWhatsAppInstance(instanceData) {
@@ -824,6 +834,8 @@ const Navigation = {
 
 // Gerenciador de Agentes
 const AgentManager = {
+  editingAgentId: null,
+
   /**
    * Renderiza lista de agentes
    */
@@ -877,6 +889,9 @@ const AgentManager = {
           </button>
           <button type="button" class="button button-small button-accent" onclick="AgentManager.connectWhatsApp('${agent.id}')">
             Conectar WhatsApp
+          </button>
+          <button type="button" class="button button-small" onclick="AgentManager.editAgent('${agent.id}')">
+            Editar
           </button>
           <button type="button" class="button button-small button-danger" onclick="AgentManager.deleteAgent('${agent.id}')">
             Excluir
@@ -966,6 +981,61 @@ const AgentManager = {
     // Simulação de download
     Utils.downloadFile('# Conteúdo mockado do ZIP\nprint("Agent files")', `agent-${agentId}.zip`);
     Toast.success('Download iniciado', 'ZIP do agente baixado com sucesso');
+  },
+
+  /**
+   * Abre modal de edição de agente
+   */
+  editAgent(agentId) {
+    const agent = appState.agents.find(a => a.id === agentId);
+    if (!agent) {
+      Toast.error('Editar', 'Agente não encontrado');
+      return;
+    }
+
+    this.editingAgentId = agentId;
+    const form = document.getElementById('edit-agent-form');
+    if (!form) return;
+
+    form.querySelector('#edit-agent-id').value = agentId;
+    form.querySelector('#edit-agent_name').value = agent.agent_name || '';
+    form.querySelector('#edit-instructions').value = agent.instructions || '';
+    form.querySelector('#edit-specialization').value = agent.specialization || '';
+    form.querySelectorAll('input[name="tools"]').forEach(input => {
+      input.checked = agent.tools.includes(input.value);
+    });
+
+    Modal.open('modal-edit-agent');
+  },
+
+  /**
+   * Salva alterações do agente
+   */
+  async saveAgent(agentData = null) {
+    try {
+      if (!agentData) {
+        const form = document.getElementById('edit-agent-form');
+        if (!form) return;
+        const tools = Array.from(form.querySelectorAll('input[name="tools"]:checked')).map(i => i.value);
+        agentData = {
+          id: this.editingAgentId,
+          agent_name: form.querySelector('#edit-agent_name').value.trim(),
+          instructions: form.querySelector('#edit-instructions').value.trim(),
+          specialization: form.querySelector('#edit-specialization').value,
+          tools
+        };
+      }
+
+      const updatedAgent = await ApiClient.updateAgent(agentData.id, agentData);
+      const agents = appState.agents.map(a => a.id === updatedAgent.id ? updatedAgent : a);
+      StateManager.updateState('agents', agents);
+      this.renderAgents();
+      Modal.close();
+      this.editingAgentId = null;
+      Toast.success('Agente atualizado', 'As alterações foram salvas');
+    } catch (error) {
+      Toast.error('Erro', error.message || 'Não foi possível salvar o agente');
+    }
   },
 
   /**
