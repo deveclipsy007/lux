@@ -36,17 +36,20 @@ from loguru import logger
 
 # Importa módulos locais
 from schemas import (
-    AgentCreate, 
-    AgentGeneratedFiles, 
-    WppInstance, 
-    SendMessage, 
+    AgentCreate,
+    AgentGeneratedFiles,
+    WppInstance,
+    SendMessage,
     HealthResponse,
     LogEntry,
-    MaterializeRequest
+    MaterializeRequest,
+    AgentInfo,
+    AgentUpdate,
 )
 from services.generator import CodeGeneratorService
 from services.evolution import EvolutionService
 from services.agno import AgnoService
+from models import AgentRepository
 
 # WebSocket imports (bypassing problematic modules)
 try:
@@ -105,6 +108,9 @@ class Settings(BaseSettings):
 # Instância global das configurações
 settings = Settings()
 
+# Repositório de agentes com persistência simples em disco
+agent_repo = AgentRepository(Path("agents.json"))
+
 # Configuração de logging
 def setup_logging():
     """Configura sistema de logs estruturado"""
@@ -156,6 +162,10 @@ async def lifespan(app: FastAPI):
     # Cria diretórios necessários
     settings.generated_agents_dir.mkdir(exist_ok=True)
     logger.info(f"Diretório de agentes criado: {settings.generated_agents_dir}")
+
+    # Carrega agentes persistidos
+    agent_repo.load()
+    logger.info(f"{len(agent_repo.list_agents())} agentes carregados do disco")
     
     # Testa conectividade com serviços externos
     try:
@@ -166,10 +176,11 @@ async def lifespan(app: FastAPI):
         logger.warning(f"⚠️  Erro ao conectar com Evolution API: {e}")
     
     logger.info("🟢 Aplicação pronta para receber requisições")
-    
+
     yield
-    
+
     # Shutdown
+    agent_repo.save()
     logger.info("🔴 Finalizando aplicação...")
 
 # Criação da aplicação FastAPI
@@ -273,6 +284,63 @@ async def health_check():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Service temporarily unavailable"
         )
+
+# CRUD de agentes
+
+
+@app.get("/api/agents", response_model=List[AgentInfo])
+async def list_agents():
+    """Lista todos os agentes cadastrados."""
+    return [agent.to_dict() for agent in agent_repo.list_agents()]
+
+
+@app.get("/api/agents/{agent_id}", response_model=AgentInfo)
+async def get_agent(agent_id: str):
+    """Retorna um agente específico."""
+    agent = agent_repo.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agente não encontrado")
+    return agent.to_dict()
+
+
+@app.post("/api/agents", response_model=AgentInfo, status_code=status.HTTP_201_CREATED)
+async def create_agent(agent_in: AgentCreate):
+    """Cria um novo agente."""
+    data = {
+        "name": agent_in.agent_name,
+        "specialization": agent_in.specialization,
+        "instructions": agent_in.instructions,
+        "tools": agent_in.tools,
+    }
+    agent = agent_repo.create_agent(data)
+    return agent.to_dict()
+
+
+@app.put("/api/agents/{agent_id}", response_model=AgentInfo)
+async def update_agent(agent_id: str, agent_in: AgentUpdate):
+    """Atualiza um agente existente."""
+    update_data = {
+        k: v
+        for k, v in {
+            "name": agent_in.agent_name,
+            "specialization": agent_in.specialization,
+            "instructions": agent_in.instructions,
+            "tools": agent_in.tools,
+        }.items()
+        if v is not None
+    }
+    agent = agent_repo.update_agent(agent_id, update_data)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agente não encontrado")
+    return agent.to_dict()
+
+
+@app.delete("/api/agents/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agent(agent_id: str):
+    """Remove um agente."""
+    if not agent_repo.delete_agent(agent_id):
+        raise HTTPException(status_code=404, detail="Agente não encontrado")
+    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
 
 # ENDPOINTS DE AGENTES
 
