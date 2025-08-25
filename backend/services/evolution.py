@@ -239,34 +239,88 @@ class EvolutionService:
                 "integration": "WHATSAPP-BAILEYS",
                 "webhook_url": webhook_url
             }
-            
+
             # Remove campos None
             payload = {k: v for k, v in payload.items() if v is not None}
-            
+
             # Cria instância via API
             response = await self._make_request("POST", "/instance/create", data=payload)
-            
+
             # Cria objeto da instância
             instance = WhatsAppInstance(
                 instance_id=instance_name,
                 webhook_url=webhook_url,
                 status=ConnectionState.DISCONNECTED
             )
-            
+
             # Adiciona ao cache
             self._instances_cache[instance_name] = instance
-            
+
             logger.info(f"✅ Instância {instance_name} criada com sucesso")
-            
+
             return {
                 "instance_id": instance_name,
                 "status": "created",
                 "webhook_url": webhook_url,
                 "api_response": response
             }
-            
+
         except EvolutionAPIError as e:
             logger.error(f"❌ Erro ao criar instância {instance_name}: {e.message}")
+
+            if e.status_code in (409, 500):
+                logger.warning(
+                    f"Instância {instance_name} pode já existir ou estar inconsistente: {e.status_code}"
+                )
+                # Tenta recuperar estado atual da instância
+                try:
+                    status_info = await self.get_instance_status(instance_name)
+                    logger.info(f"🔄 Instância {instance_name} já existente recuperada")
+                    return {
+                        "instance_id": instance_name,
+                        "status": status_info.get("state", "unknown"),
+                        "webhook_url": webhook_url,
+                        "api_response": status_info,
+                    }
+                except EvolutionAPIError as status_error:
+                    logger.warning(
+                        f"⚠️ Não foi possível obter status da instância {instance_name}: {status_error.message}"
+                    )
+                    # Tenta remover e recriar instância
+                    try:
+                        logger.info(f"🗑️ Removendo instância {instance_name} para recriação")
+                        await self.delete_instance(instance_name)
+                        response = await self._make_request(
+                            "POST", "/instance/create", data=payload
+                        )
+
+                        instance = WhatsAppInstance(
+                            instance_id=instance_name,
+                            webhook_url=webhook_url,
+                            status=ConnectionState.DISCONNECTED,
+                        )
+                        self._instances_cache[instance_name] = instance
+                        logger.info(
+                            f"✅ Instância {instance_name} recriada com sucesso"
+                        )
+                        return {
+                            "instance_id": instance_name,
+                            "status": "recreated",
+                            "webhook_url": webhook_url,
+                            "api_response": response,
+                        }
+                    except EvolutionAPIError as recreate_error:
+                        error_msg = (
+                            f"Falha ao recriar instância {instance_name}: {recreate_error.message}"
+                        )
+                        logger.error(f"❌ {error_msg}")
+                        raise EvolutionAPIError(
+                            error_msg,
+                            recreate_error.status_code,
+                            recreate_error.response_data,
+                        )
+
+            # Se não for caso tratado, propaga erro original
             raise
     
     async def get_instance_info(self, instance_name: str) -> Dict[str, Any]:
@@ -290,7 +344,12 @@ class EvolutionService:
         except EvolutionAPIError as e:
             logger.error(f"❌ Erro ao obter info da instância {instance_name}: {e.message}")
             raise
-    
+
+    async def get_instance_status(self, instance_name: str) -> Dict[str, Any]:
+        """Obtém estado atual de conexão da instância"""
+
+        return await self.get_connection_state(instance_name)
+
     async def delete_instance(self, instance_name: str) -> bool:
         """
         Exclui uma instância
