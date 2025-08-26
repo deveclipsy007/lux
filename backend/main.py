@@ -558,28 +558,36 @@ async def materialize_agent(
 
 @app.post("/api/wpp/instances", response_model=InstanceState)
 async def create_whatsapp_instance(
-    instance_data: Dict[str, str],
+    instance_data: Dict[str, Any],
     evolution_service: EvolutionService = Depends(get_evolution_service)
 ):
     """
     Cria ou recupera uma instância do WhatsApp via Evolution API
-    
+
     Args:
         instance_data: Dados da instância (ex: {"instance_name": "my-agent"})
-        
+
     Returns:
         InstanceState: Estado da instância criada
     """
-    
+
     instance_name = (instance_data.get("instance_name") or "").strip()
     if not instance_name:
         raise HTTPException(status_code=400, detail="instance_name é obrigatório")
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", instance_name):
         raise HTTPException(status_code=400, detail="instance_name deve ser um slug válido")
+
+    webhook_url = instance_data.get("webhook_url")
+    events = instance_data.get("events")
+
     logger.info(f"📱 Criando instância WhatsApp: {instance_name}")
-    
+
     try:
-        result = await evolution_service.create_instance(instance_name)
+        result = await evolution_service.create_instance(
+            instance_name,
+            webhook_url=webhook_url,
+            events=events,
+        )
 
         logger.info(f"✅ Instância {instance_name} criada/recuperada")
 

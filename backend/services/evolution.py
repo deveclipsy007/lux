@@ -224,26 +224,33 @@ class EvolutionService:
     
     # OPERAÇÕES DE INSTÂNCIA
     
-    async def create_instance(self, instance_name: str, webhook_url: Optional[str] = None) -> Dict[str, Any]:
+    async def create_instance(
+        self,
+        instance_name: str,
+        webhook_url: Optional[str] = None,
+        events: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """
         Cria ou recupera uma instância do WhatsApp
-        
+
         Args:
             instance_name: Nome único da instância
             webhook_url: URL para receber webhooks (opcional)
-            
+            events: Lista de eventos a serem assinados (opcional)
+
         Returns:
             Dict com dados da instância criada
         """
-        
+
         logger.info(f"📱 Criando instância: {instance_name}")
-        
+
         try:
             # Dados para criação da instância
             payload = {
                 "instanceName": instance_name,
                 "integration": "WHATSAPP-BAILEYS",
-                "webhook_url": webhook_url
+                "webhook_url": webhook_url,
+                "events": events,
             }
 
             # Remove campos None
@@ -269,7 +276,8 @@ class EvolutionService:
                 "instance_id": instance_name,
                 "status": "created",
                 "webhook_url": webhook_url,
-                "api_response": response
+                "events": events,
+                "api_response": response,
             }
 
         except EvolutionAPIError as e:
@@ -287,6 +295,7 @@ class EvolutionService:
                         "instance_id": instance_name,
                         "status": status_info.get("state", "unknown"),
                         "webhook_url": webhook_url,
+                        "events": events,
                         "api_response": status_info,
                     }
                 except EvolutionAPIError as status_error:
@@ -317,6 +326,7 @@ class EvolutionService:
                             "instance_id": instance_name,
                             "status": "recreated",
                             "webhook_url": webhook_url,
+                            "events": events,
                             "api_response": response,
                         }
                     except EvolutionAPIError as recreate_error:
