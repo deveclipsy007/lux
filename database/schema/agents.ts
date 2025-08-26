@@ -6,7 +6,7 @@ import { sql } from "drizzle-orm";
  */
 export const agents = sqliteTable("agents", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  name: text("name").notNull(),
+  name: text("name").notNull().unique(),
   specialization: text("specialization"),
   instructions: text("instructions"),
   status: text("status").notNull().default("inactive"),

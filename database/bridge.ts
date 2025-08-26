@@ -1,6 +1,7 @@
 import {
   createAgent,
   getAgentById,
+  getAgentByName,
   listAgents,
   updateAgent,
   deleteAgent,
@@ -33,6 +34,9 @@ async function main() {
       break;
     case "get":
       console.log(JSON.stringify(await getAgentById(payload.id)));
+      break;
+    case "get_by_name":
+      console.log(JSON.stringify(await getAgentByName(payload.name)));
       break;
     case "create":
       console.log(JSON.stringify(await createAgent(payload)));
