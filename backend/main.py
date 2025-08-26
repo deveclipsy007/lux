@@ -21,6 +21,7 @@ import json
 import asyncio
 import uuid
 import subprocess
+import re
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -570,7 +571,11 @@ async def create_whatsapp_instance(
         WppInstance: Dados da instância criada
     """
     
-    instance_name = instance_data.get("instance_name", settings.evolution_default_instance)
+    instance_name = (instance_data.get("instance_name") or "").strip()
+    if not instance_name:
+        raise HTTPException(status_code=400, detail="instance_name é obrigatório")
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", instance_name):
+        raise HTTPException(status_code=400, detail="instance_name deve ser um slug válido")
     logger.info(f"📱 Criando instância WhatsApp: {instance_name}")
     
     try:

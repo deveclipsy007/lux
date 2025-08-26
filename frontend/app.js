@@ -1300,7 +1300,7 @@ const AgentManager = {
         return;
       }
 
-      const agentSlug = Utils.slugify(agent.agent_name);
+      const instanceName = Utils.slugify(agent.agent_name);
 
       // Abre modal de QR Code
       Modal.open('modal-qr');
@@ -1314,7 +1314,6 @@ const AgentManager = {
       Toast.info('WhatsApp', 'Iniciando conexão com WhatsApp...');
 
       // Cria instância WhatsApp
-      const instanceName = `${appState.evolutionAPI.instanceName}-${agentSlug}`;
       agent.whatsappInstance = instanceName;
       StateManager.persistState();
       await this.createWhatsAppInstance(instanceName);
@@ -1552,8 +1551,7 @@ const AgentManager = {
    * Atualiza status do agente na UI
    */
   updateAgentStatus(instanceName, status) {
-    const slug = instanceName.replace(`${appState.evolutionAPI.instanceName}-`, '');
-    const agent = appState.agents.find(a => Utils.slugify(a.agent_name) === slug);
+    const agent = appState.agents.find(a => Utils.slugify(a.agent_name) === instanceName);
     if (!agent) return;
 
     const card = document.querySelector(`.agent-card[data-agent-id="${agent.id}"]`);
