@@ -1416,7 +1416,7 @@ const AgentManager = {
 
         if (response.ok) {
           const data = await response.json();
-          const state = data.instance?.state || data.state;
+          const state = data.state;
           
           if (statusElement) {
             statusElement.textContent = this.getConnectionStatusText(state);
@@ -1445,7 +1445,7 @@ const AgentManager = {
               let statusOk = false;
               if (statusCheck.ok) {
                 const statusData = await statusCheck.json().catch(() => ({}));
-                const verifiedState = statusData.instance?.state || statusData.state;
+                const verifiedState = statusData.state;
                 statusOk = verifiedState === 'open' || verifiedState === 'connected';
               }
               if (!statusOk) {
