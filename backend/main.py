@@ -205,6 +205,19 @@ async def lifespan(app: FastAPI):
     settings.generated_agents_dir.mkdir(exist_ok=True)
     logger.info(f"Diretório de agentes criado: {settings.generated_agents_dir}")
 
+    # Verifica configurações de banco de dados antes das migrações
+    db_provider = os.getenv("DB_PROVIDER", "sqlite")
+    database_url = os.getenv("DATABASE_URL")
+    logger.info(f"DB_PROVIDER: {db_provider}")
+    if database_url:
+        logger.info(f"DATABASE_URL: {database_url}")
+    else:
+        logger.warning("DATABASE_URL não definido")
+
+    if db_provider == "postgres" and not database_url:
+        logger.error("DATABASE_URL é obrigatório quando DB_PROVIDER=postgres")
+        raise RuntimeError("DATABASE_URL environment variable is required for Postgres")
+
     # Executa migrações do banco de dados
     try:
         subprocess.run(
