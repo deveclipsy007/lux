@@ -43,6 +43,35 @@ agno-sdk-agent-generator/
 └── README.md                 # Este arquivo
 ```
 
+### Visão Geral em Diagrama
+
+```mermaid
+graph TD
+  FE[Frontend - Interface iOS] --> API{Backend FastAPI}
+  API --> AGNO[Agno Framework]
+  API --> EVO[Evolution API (WhatsApp)]
+  API --> DB[(SQLite/PostgreSQL)]
+  API --> LOG[Loguru / logs]
+```
+
+#### Sequência de Geração e Envio
+
+```mermaid
+sequenceDiagram
+  participant U as Usuário
+  participant FE as Frontend iOS
+  participant API as Backend FastAPI
+  participant AGNO as Agno Framework
+  participant EVO as Evolution API
+  U->>FE: Configura agente
+  FE->>API: Envia definição do agente
+  API->>AGNO: Gera agente
+  AGNO-->>API: Retorna agente
+  API->>EVO: Envia mensagem
+  EVO-->>API: Confirmação
+  API-->>FE: Status de envio
+```
+
 ---
 
 ## 🛠️ Stack Tecnológica
