@@ -2,6 +2,7 @@
 
 setup:
 	sh scripts/codex_setup.sh
+	npx openapi-typescript http://localhost:8000/openapi.json -o frontend/api.ts
 
 lint:
 	echo "lint ok"
