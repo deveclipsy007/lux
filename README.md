@@ -1,6 +1,6 @@
 # 🤖 Agno SDK Agent Generator
 
-> **Gerador completo de agentes SDK** com interface iOS dark e backend Python para criação de agentes inteligentes integrados ao WhatsApp via Evolution API.
+> **Gerador completo de agentes SDK** com interface iOS dark e backend Python para criação de agentes inteligentes integrados ao [WhatsApp](https://www.whatsapp.com/) via [Evolution API](https://evolution-api.com/docs).
 
 ---
 
@@ -11,9 +11,9 @@ O **Agno SDK Agent Generator** é uma plataforma completa que permite criar, con
 ### ✨ Principais Funcionalidades
 
 - 🎨 **Interface iOS Dark**: Frontend elegante com tema iOS dark, componentes nativos e microinterações
-- 🤖 **Geração de Agentes**: Criação automática de código Python para agentes Agno com especialização
-- 📱 **Integração WhatsApp**: Conexão direta via Evolution API com QR Code e envio de mensagens  
-- 🔧 **Múltiplas Ferramentas**: Suporte para WhatsApp, Email, Calendário, Webhooks e Banco de dados
+- 🤖 **Geração de Agentes**: Criação automática de código Python para agentes [Agno](https://docs.agno.ai) com especialização
+- 📱 **Integração WhatsApp**: Conexão direta via [Evolution API](https://evolution-api.com/docs) com QR Code e envio de mensagens
+- 🔧 **Múltiplas Ferramentas**: Suporte para [WhatsApp](https://www.whatsapp.com/), Email, Calendário, Webhooks e Banco de dados
 - 📊 **Sistema de Logs**: Monitoramento em tempo real com filtros e exportação
 - 💾 **Persistência**: Salvamento automático de rascunhos e configurações
 - 🚀 **Deploy Pronto**: Materialização no servidor e download de arquivos ZIP
@@ -77,24 +77,24 @@ sequenceDiagram
 ## 🛠️ Stack Tecnológica
 
 ### Frontend
-- **HTML5 Semântico**: Estrutura acessível com ARIA
-- **CSS3 Avançado**: Variáveis, Grid, Flexbox, animações iOS-like  
-- **JavaScript Vanilla**: ES6+, módulos, async/await, state management
+- [HTML5 Semântico](https://developer.mozilla.org/docs/Web/HTML): Estrutura acessível com ARIA
+- [CSS3 Avançado](https://developer.mozilla.org/docs/Web/CSS): Variáveis, Grid, Flexbox, animações iOS-like
+- [JavaScript Vanilla](https://developer.mozilla.org/docs/Web/JavaScript): ES6+, módulos, async/await, state management
 
-### Backend  
-- **Python 3.11+**: Linguagem base moderna
-- **FastAPI**: Framework web assíncrono e performático
-- **Pydantic 2**: Validação e serialização de dados
-- **Loguru**: Sistema de logging avançado
-- **Jinja2**: Templates para geração de código
-- **HTTPX**: Cliente HTTP assíncrono
-- **Uvicorn**: Servidor ASGI de alta performance
+### Backend
+- [Python 3.11+](https://docs.python.org/3/): Linguagem base moderna
+- [FastAPI](https://fastapi.tiangolo.com/tutorial/path-operations/): Framework web assíncrono e performático
+- [Pydantic 2](https://docs.pydantic.dev/latest/): Validação e serialização de dados
+- [Loguru](https://loguru.readthedocs.io/): Sistema de logging avançado
+- [Jinja2](https://jinja.palletsprojects.com/): Templates para geração de código
+- [HTTPX](https://www.python-httpx.org/): Cliente HTTP assíncrono
+- [Uvicorn](https://www.uvicorn.org/): Servidor ASGI de alta performance
 
 ### Integrações
-- **Evolution API**: Integração WhatsApp completa
-- **Agno Framework**: Criação e execução de agentes
-- **SQLite/PostgreSQL**: Armazenamento de dados  
-- **Google APIs**: Calendário e outros serviços
+- [Evolution API](https://evolution-api.com/docs): Integração WhatsApp completa
+- [Agno Framework](https://docs.agno.ai): Criação e execução de agentes
+- [SQLite](https://www.sqlite.org/)/[PostgreSQL](https://www.postgresql.org/docs/): Armazenamento de dados
+- [Google APIs](https://developers.google.com/apis): Calendário e outros serviços
 
 ---
 
@@ -246,7 +246,7 @@ Consulte `.env.example` para lista completa com 50+ configurações.
 ### 1. Criação de Agente
 1. Acesse a interface web
 2. Preencha nome, especialização e instruções
-3. Selecione ferramentas (WhatsApp, Email, etc.)
+3. Selecione ferramentas ([WhatsApp](https://www.whatsapp.com/), Email, etc.)
 4. Visualize pré-visualização JSON
 5. Salve rascunho ou continue
 
@@ -256,8 +256,8 @@ Consulte `.env.example` para lista completa com 50+ configurações.
 3. Copie código ou baixe ZIP
 4. Materialize no servidor para execução
 
-### 3. Integração WhatsApp
-1. Crie instância Evolution API  
+### 3. Integração [WhatsApp](https://www.whatsapp.com/)
+1. Crie instância [Evolution API](https://evolution-api.com/docs)
 2. Escaneie QR Code gerado
 3. Aguarde status "CONECTADO"
 4. Envie mensagem de teste
@@ -280,7 +280,7 @@ Consulte `.env.example` para lista completa com 50+ configurações.
 | `POST` | `/api/agents/generate` | Gera código completo do agente |
 | `POST` | `/api/agents/materialize` | Salva arquivos no servidor |
 
-### 📱 WhatsApp (Evolution)
+### 📱 [WhatsApp](https://www.whatsapp.com/) (Evolution)
 
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
@@ -362,11 +362,11 @@ O sistema oferece templates otimizados por especialização:
 
 | Ferramenta | Funcionalidades | Configuração |
 |------------|----------------|--------------|
-| **📱 WhatsApp** | Mensagens, mídia, grupos, QR Code | Evolution API |
+| **📱 WhatsApp** | Mensagens, mídia, grupos, QR Code | [Evolution API](https://evolution-api.com/docs) |
 | **📧 Email** | SMTP, templates, anexos | Gmail/Outlook |
-| **📅 Calendário** | Google Calendar, eventos, lembretes | OAuth 2.0 |
-| **🗄️ Database** | SQLite/PostgreSQL, conversas, dados | SQLAlchemy |
-| **🔗 Webhooks** | APIs externas, eventos, integração | HTTP client |
+| **📅 Calendário** | [Google Calendar](https://developers.google.com/calendar), eventos, lembretes | [OAuth 2.0](https://oauth.net/2/) |
+| **🗄️ Database** | [SQLite](https://www.sqlite.org/)/[PostgreSQL](https://www.postgresql.org/docs/), conversas, dados | [SQLAlchemy](https://docs.sqlalchemy.org/) |
+| **🔗 Webhooks** | APIs externas, eventos, integração | [HTTPX](https://www.python-httpx.org/) |
 
 ---
 
@@ -374,7 +374,7 @@ O sistema oferece templates otimizados por especialização:
 
 ### Sistema de Logs Estruturado
 - **Níveis**: DEBUG, INFO, WARNING, ERROR, CRITICAL
-- **Origens**: Frontend, Backend, Evolution API, Agno
+- **Origens**: Frontend, Backend, [Evolution API](https://evolution-api.com/docs), [Agno](https://docs.agno.ai)
 - **Formatos**: Texto estruturado, JSON para análise
 - **Rotação**: 10MB por arquivo, 5 backups
 - **Streaming**: Server-Sent Events para tempo real
@@ -452,7 +452,7 @@ AUTO_BACKUP_ENABLED=true
 
 ## 🧪 Testes e Qualidade
 
-### Testar Integração WhatsApp
+### Testar Integração [WhatsApp](https://www.whatsapp.com/)
 ```bash
 # Teste completo da integração Evolution API
 python test_integration.py
@@ -462,6 +462,7 @@ python test_integration.py --send-test
 ```
 
 ### Executar Testes Unitários
+Os testes utilizam [pytest](https://docs.pytest.org/) e [coverage](https://coverage.readthedocs.io/).
 ```bash
 # Testes unitários
 pytest backend/tests/ -v
@@ -474,6 +475,7 @@ pytest --cov=backend --cov-report=html
 ```
 
 ### Qualidade de Código
+Ferramentas: [Black](https://black.readthedocs.io/), [isort](https://pycqa.github.io/isort/), [Flake8](https://flake8.pycqa.org/), [mypy](https://mypy-lang.org/).
 ```bash
 # Formatação
 black backend/
@@ -481,7 +483,7 @@ black backend/
 # Imports
 isort backend/
 
-# Linting  
+# Linting
 flake8 backend/
 
 # Type checking
@@ -511,7 +513,7 @@ mypy backend/
 
 ### Problemas Comuns
 
-**❌ "Evolution API connection failed"**
+**❌ "[Evolution API](https://evolution-api.com/docs) connection failed"**
 ```bash
 # Verifique as variáveis
 echo $EVOLUTION_BASE_URL
@@ -548,14 +550,14 @@ python test_integration.py
 ```
 
 **❌ "QR Code não aparece"**
-- Verifique se as credenciais da Evolution API estão corretas
+- Verifique se as credenciais da [Evolution API](https://evolution-api.com/docs) estão corretas
 - Teste a conexão na seção Configurações
 - Verifique se a instância não já está conectada
 - Consulte os logs do backend para detalhes
 
 **❌ "Webhook não funciona"**
 - Confirme se sua URL está acessível publicamente
-- Use ngrok para túnel local em desenvolvimento
+- Use [ngrok](https://ngrok.com) para túnel local em desenvolvimento
 - Verifique se o endpoint `/api/wpp/webhook/{instance_id}` está funcionando
 - Consulte logs para ver se eventos estão sendo recebidos
 
@@ -572,8 +574,8 @@ python test_integration.py
 - 🎉 Release inicial completo
 - ✨ Interface iOS dark responsiva  
 - 🤖 Geração de agentes com 5 especializações
-- 📱 Integração WhatsApp via Evolution API
-- 🛠️ Backend FastAPI com todos os endpoints
+- 📱 Integração WhatsApp via [Evolution API](https://evolution-api.com/docs)
+- 🛠️ Backend [FastAPI](https://fastapi.tiangolo.com/tutorial/path-operations/) com todos os endpoints
 - 📊 Sistema de logs avançado
 - 🔧 5 ferramentas integradas
 - 📦 Deploy containerizado pronto
