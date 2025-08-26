@@ -135,6 +135,23 @@ cd backend
 uvicorn main:app --reload --port 8000
 ```
 
+#### Modelo de Dados
+
+O backend trabalha com quatro entidades principais que estruturam a persistência:
+
+- **Agent**: agente configurável responsável por executar tarefas.
+- **Instance**: execução específica de um agente em determinado contexto.
+- **Log**: registros das atividades realizadas pelos agentes.
+- **Message**: mensagens registradas por uma instância durante as interações.
+
+```mermaid
+erDiagram
+  AGENT ||--o{ INSTANCE : possui
+  AGENT ||--o{ LOG : gera
+  INSTANCE ||--o{ MESSAGE : registra
+```
+
+
 #### Banco de Dados
 
 O backend utiliza o Drizzle para gerenciar migrações. É possível alternar entre
