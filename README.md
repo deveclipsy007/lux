@@ -190,6 +190,18 @@ O backend exige autenticação via header `Authorization: Bearer <TOKEN>`.
 - No frontend, informe o token em **Configurações → Conexões → API Access Token**.
 - Requisições sem token válido retornam `401 Unauthorized`.
 
+### Ciclo de Desenvolvimento
+
+```mermaid
+flowchart LR
+  A[Clonar repositório] --> B[Criar ambiente virtual]
+  B --> C[Instalar dependências]
+  C --> D[Configurar .env]
+  D --> E[Executar backend]
+  E --> F[Rodar frontend]
+  F --> G[Testar integrações]
+```
+
 ---
 
 ## 🔐 Configuração de Ambiente
