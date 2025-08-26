@@ -6,6 +6,7 @@ These instructions apply to the entire repository.
 ## Workflow
 - Use the provided Makefile targets to setup, lint and test before committing: `make setup lint test`.
 - Use `make dev` to run a local development environment and `make e2e` for end-to-end checks.
+- Use `rg` for searching the repository instead of recursive `grep`.
 
 ## Code Style
 - Shell scripts must be POSIX compatible and start with `#!/bin/sh` and `set -e`.
