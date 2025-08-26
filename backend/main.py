@@ -591,7 +591,7 @@ async def create_whatsapp_instance(
 
         logger.info(f"✅ Instância {instance_name} criada/recuperada")
 
-        return {"state": result.get("status", "UNKNOWN")}
+        return {"status": "success", "state": result.get("status", "UNKNOWN")}
         
     except Exception as e:
         logger.error(f"❌ Erro ao criar instância {instance_name}: {str(e)}")
@@ -665,7 +665,7 @@ async def get_instance_status(
         state = status_info.get("state", "UNKNOWN")
         state = state.value if hasattr(state, "value") else state
 
-        return {"state": state}
+        return {"status": "success", "state": state}
         
     except Exception as e:
         logger.error(f"❌ Erro ao consultar status {instance_id}: {str(e)}")
@@ -685,7 +685,11 @@ async def get_instance_webhook(
 
     try:
         result = await evolution_service.get_webhook(instance_id)
-        return result
+        return {
+            "status": result.get("status", "error"),
+            "webhook_url": result.get("webhook_url"),
+            "events": result.get("events", []),
+        }
     except Exception as e:
         logger.error(f"❌ Erro ao consultar webhook {instance_id}: {str(e)}")
         raise HTTPException(

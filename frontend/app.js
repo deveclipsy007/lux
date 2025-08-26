@@ -1440,32 +1440,27 @@ const AgentManager = {
             // Verifica se o webhook foi configurado corretamente
             const safeName = encodeURIComponent(instanceName);
             try {
-              const [statusCheck, webhookCheck] = await Promise.all([
-                fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/status`, {
-                  headers: ApiClient.getAuthHeaders()
-                }),
-                fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/webhook`, {
-                  headers: ApiClient.getAuthHeaders()
-                })
-              ]);
-              ApiClient.checkAuth(statusCheck);
-              ApiClient.checkAuth(webhookCheck);
-
-              let statusOk = false;
-              if (statusCheck.ok) {
-                const statusData = await statusCheck.json().catch(() => ({}));
-                const verifiedState = statusData.state;
-                statusOk = verifiedState === 'open' || verifiedState === 'connected';
-              }
+              const statusResponse = await fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/status`, {
+                headers: ApiClient.getAuthHeaders()
+              });
+              ApiClient.checkAuth(statusResponse);
+              const statusData = await statusResponse.json().catch(() => ({}));
+              const statusOk = statusResponse.ok &&
+                statusData.status === 'success' &&
+                (statusData.state === 'open' || statusData.state === 'connected');
               if (!statusOk) {
-                Logger.log('warning', 'whatsapp', JSON.stringify({ action: 'verify_status', success: false, httpStatus: statusCheck.status }));
+                Logger.log('warning', 'whatsapp', JSON.stringify({ action: 'verify_status', success: false, httpStatus: statusResponse.status }));
                 Toast.warning('WhatsApp', 'Não foi possível confirmar o status da conexão.');
               }
 
-              const webhookData = await webhookCheck.json().catch(() => ({}));
-              const webhookOk = webhookCheck.ok && webhookData.status === 'success';
+              const webhookResponse = await fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/webhook`, {
+                headers: ApiClient.getAuthHeaders()
+              });
+              ApiClient.checkAuth(webhookResponse);
+              const webhookData = await webhookResponse.json().catch(() => ({}));
+              const webhookOk = webhookResponse.ok && webhookData.status === 'success';
               if (!webhookOk) {
-                Logger.log('warning', 'whatsapp', JSON.stringify({ action: 'verify_webhook', success: false, httpStatus: webhookCheck.status }));
+                Logger.log('warning', 'whatsapp', JSON.stringify({ action: 'verify_webhook', success: false, httpStatus: webhookResponse.status }));
                 Toast.warning('WhatsApp', 'Webhook não confirmado.');
               }
 
