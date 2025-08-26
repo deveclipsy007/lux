@@ -200,8 +200,18 @@ async def lifespan(app: FastAPI):
         logger.error(f"Falha ao executar migrações: {e}")
 
     # Inicializa repositórios
-    await agent_repo.init()
-    await event_repo.init()
+    try:
+        await agent_repo.init()
+    except Exception as e:
+        logger.error(f"Erro ao inicializar AgentRepository: {e}")
+        logger.error("Banco de dados indisponível")
+        sys.exit(1)
+    try:
+        await event_repo.init()
+    except Exception as e:
+        logger.error(f"Erro ao inicializar EventRepo: {e}")
+        logger.error("Banco de dados indisponível")
+        sys.exit(1)
     agents = await agent_repo.list_agents()
     logger.info(f"{len(agents)} agentes carregados do banco")
     
