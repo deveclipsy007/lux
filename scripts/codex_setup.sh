@@ -2,6 +2,12 @@
 set -e
 
 echo "Running project setup"
-# Placeholder for dependency installation
-# npm install && pip install -r backend/requirements.txt
+
+echo "Installing Node dependencies"
+npm install >/dev/null
+
+echo "Installing Python dependencies"
+pip install -r backend/requirements.txt >/dev/null
+
+echo "Setup complete"
 
