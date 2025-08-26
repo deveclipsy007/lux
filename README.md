@@ -507,6 +507,19 @@ flake8 backend/
 mypy backend/
 ```
 
+### Testes End-to-End
+
+Checklist de telas cobertas:
+
+- [x] Criação de agente
+- [x] Consulta RAG
+
+```bash
+make e2e
+```
+
+Os testes E2E também são executados no CI.
+
 ---
 
 ## 📚 Documentação Adicional
