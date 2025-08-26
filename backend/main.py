@@ -27,7 +27,17 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends, status, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Depends,
+    status,
+    BackgroundTasks,
+    WebSocket,
+    WebSocketDisconnect,
+    Request,
+    Response,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -36,6 +46,11 @@ try:
 except ImportError:
     from pydantic import BaseSettings
 from loguru import logger
+from prometheus_client import Counter, CONTENT_TYPE_LATEST, generate_latest
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 # Importa módulos locais
 from schemas import (
@@ -48,6 +63,8 @@ from schemas import (
     MaterializeRequest,
     AgentInfo,
     AgentUpdate,
+    StatusResponse,
+    ServiceChecks,
 )
 from services.generator import CodeGeneratorService
 from services.evolution import EvolutionService
@@ -240,6 +257,25 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Instrumentação OpenTelemetry e métricas Prometheus
+trace.set_tracer_provider(TracerProvider())
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+FastAPIInstrumentor.instrument_app(app)
+
+REQUEST_COUNT = Counter("app_requests_total", "Total HTTP requests", ["method", "endpoint"])
+
+
+@app.middleware("http")
+async def track_requests(request: Request, call_next):
+    response = await call_next(request)
+    REQUEST_COUNT.labels(request.method, request.url.path).inc()
+    return response
+
+
+@app.get("/metrics")
+def metrics() -> Response:
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 # Configuração CORS
 allowed_origins = settings.allowed_origins.split(",") if settings.allowed_origins else ["*"]
 
@@ -298,6 +334,38 @@ async def log_requests(request, call_next):
         logger.error(f"❌ Error {request.url.path} - {process_time:.3f}s: {str(e)}")
         raise
 
+# ---------------------------------------------------------------------------
+# Funções de verificação para health/readiness
+# ---------------------------------------------------------------------------
+
+
+async def check_database() -> bool:
+    try:
+        await agent_repo.list_agents()
+        return True
+    except Exception as e:
+        logger.error(f"Database check failed: {e}")
+        return False
+
+
+async def check_queue() -> bool:
+    try:
+        await app_store.get_pending_events()
+        return True
+    except Exception as e:
+        logger.error(f"Queue check failed: {e}")
+        return False
+
+
+async def check_external() -> bool:
+    try:
+        service = EvolutionService(settings)
+        await service._make_request("GET", "/instance/fetchInstances", params={"limit": 1})
+        return True
+    except Exception as e:
+        logger.error(f"External service check failed: {e}")
+        return False
+
 # ENDPOINTS DA API
 
 @app.get("/", response_model=HealthResponse)
@@ -310,23 +378,34 @@ async def root():
         timestamp=asyncio.get_event_loop().time()
     )
 
-@app.get("/api/health", response_model=HealthResponse)
-async def health_check():
-    """Health check endpoint"""
-    try:
-        # Testa conectividade básica
-        return HealthResponse(
-            status="healthy",
-            message="All systems operational",
-            version="1.0.0",
-            timestamp=asyncio.get_event_loop().time()
-        )
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service temporarily unavailable"
-        )
+@app.get("/health", response_model=StatusResponse)
+async def health() -> StatusResponse:
+    db_ok = await check_database()
+    queue_ok = await check_queue()
+    status_str = "ok" if db_ok and queue_ok else "fail"
+    return StatusResponse(
+        status=status_str,
+        checks=ServiceChecks(database=db_ok, queue=queue_ok),
+        timestamp=asyncio.get_event_loop().time(),
+    )
+
+
+@app.get("/ready", response_model=StatusResponse)
+async def ready() -> StatusResponse:
+    db_ok = await check_database()
+    queue_ok = await check_queue()
+    external_ok = await check_external()
+    status_str = "ok" if all([db_ok, queue_ok, external_ok]) else "fail"
+    return StatusResponse(
+        status=status_str,
+        checks=ServiceChecks(database=db_ok, queue=queue_ok, external=external_ok),
+        timestamp=asyncio.get_event_loop().time(),
+    )
+
+
+@app.get("/api/health", response_model=StatusResponse)
+async def api_health() -> StatusResponse:
+    return await health()
 
 # CRUD de agentes
 

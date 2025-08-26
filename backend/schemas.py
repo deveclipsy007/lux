@@ -435,6 +435,37 @@ class HealthResponse(BaseModel):
             }
         }
 
+
+class ServiceChecks(BaseModel):
+    """Status de componentes internos e externos"""
+
+    database: bool = Field(..., description="Conexão com banco de dados")
+    queue: bool = Field(..., description="Status de filas internas")
+    external: Optional[bool] = Field(
+        None, description="Status das integrações externas"
+    )
+
+
+class StatusResponse(BaseModel):
+    """Resposta para health/readiness checks"""
+
+    status: str = Field(..., description="Estado geral do sistema")
+    checks: ServiceChecks = Field(..., description="Resultados individuais")
+    timestamp: float = Field(..., description="Timestamp Unix")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "status": "ok",
+                "checks": {
+                    "database": True,
+                    "queue": True,
+                    "external": True,
+                },
+                "timestamp": 1706097600.0,
+            }
+        }
+
 class LogEntry(BaseModel):
     """Entrada individual de log"""
     
