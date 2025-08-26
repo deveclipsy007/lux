@@ -77,6 +77,7 @@ from db import (
     MessageRepo,
     ConversationRepo,
 )
+from context import correlation_id_var
 
 # WebSocket imports (bypassing problematic modules)
 try:
@@ -156,41 +157,45 @@ async def log_event(event_type: EventType, agent_id: str, data: Dict[str, Any]) 
 # Configuração de logging
 def setup_logging():
     """Configura sistema de logs estruturado"""
-    
+
     # Remove handlers padrão do loguru
     logger.remove()
-    
+    logger.configure(extra={"correlation_id": "-"})
+
     # Cria diretório de logs se não existir
     settings.logs_dir.mkdir(exist_ok=True)
-    
-    # Console handler
-    logger.add(
-        sys.stderr,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-        level=settings.log_level,
-        colorize=True
+
+    fmt_console = (
+        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | "
+        "correlation_id={extra[correlation_id]} | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+        "<level>{message}</level>"
     )
-    
+    logger.add(sys.stderr, format=fmt_console, level=settings.log_level, colorize=True)
+
+    fmt_file = (
+        "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | correlation_id={extra[correlation_id]} | "
+        "{name}:{function}:{line} - {message}"
+    )
     # Arquivo handler - Todos os logs
     logger.add(
         settings.logs_dir / "app.log",
         rotation="10 MB",
         retention="7 days",
         level="DEBUG",
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-        serialize=False
+        format=fmt_file,
+        serialize=False,
     )
-    
+
     # Arquivo handler - Apenas erros
     logger.add(
-        settings.logs_dir / "errors.log", 
+        settings.logs_dir / "errors.log",
         rotation="10 MB",
         retention="30 days",
         level="ERROR",
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-        serialize=False
+        format=fmt_file,
+        serialize=False,
     )
-    
+
     logger.info("Sistema de logging configurado")
 
 # Lifecycle da aplicação
@@ -276,6 +281,20 @@ trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(ConsoleSpanExp
 FastAPIInstrumentor.instrument_app(app)
 
 REQUEST_COUNT = Counter("app_requests_total", "Total HTTP requests", ["method", "endpoint"])
+
+
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    """Garantir a presença de X-Correlation-ID em todas as requisições."""
+    correlation_id = request.headers.get("X-Correlation-ID") or str(uuid.uuid4())
+    token = correlation_id_var.set(correlation_id)
+    try:
+        with logger.contextualize(correlation_id=correlation_id):
+            response = await call_next(request)
+    finally:
+        correlation_id_var.reset(token)
+    response.headers["X-Correlation-ID"] = correlation_id
+    return response
 
 
 @app.middleware("http")
