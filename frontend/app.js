@@ -1453,11 +1453,8 @@ const AgentManager = {
                 Toast.warning('WhatsApp', 'Não foi possível confirmar o status da conexão.');
               }
 
-              let webhookOk = false;
-              if (webhookCheck.ok) {
-                const webhookData = await webhookCheck.json().catch(() => ({}));
-                webhookOk = webhookData.status === 'success';
-              }
+              const webhookData = await webhookCheck.json().catch(() => ({}));
+              const webhookOk = webhookCheck.ok && webhookData.status === 'success';
               if (!webhookOk) {
                 Logger.log('warning', 'whatsapp', JSON.stringify({ action: 'verify_webhook', success: false, httpStatus: webhookCheck.status }));
                 Toast.warning('WhatsApp', 'Webhook não confirmado.');

@@ -674,6 +674,25 @@ async def get_instance_status(
             detail=f"Erro ao consultar status: {str(e)}"
         )
 
+@app.get("/api/wpp/instances/{instance_id}/webhook")
+async def get_instance_webhook(
+    instance_id: str,
+    evolution_service: EvolutionService = Depends(get_evolution_service),
+):
+    """Consulta a configuração de webhook de uma instância"""
+
+    logger.info(f"🔍 Consultando webhook de {instance_id}")
+
+    try:
+        result = await evolution_service.get_webhook(instance_id)
+        return result
+    except Exception as e:
+        logger.error(f"❌ Erro ao consultar webhook {instance_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao consultar webhook: {str(e)}"
+        )
+
 @app.post("/api/wpp/instances/{instance_id}/webhook")
 async def set_instance_webhook(
     instance_id: str,

@@ -708,7 +708,28 @@ class EvolutionService:
             return "document"
     
     # CONFIGURAÇÃO DE WEBHOOKS
-    
+
+    async def get_webhook(self, instance_name: str) -> Dict[str, Any]:
+        """Obtém configuração de webhook de uma instância"""
+
+        logger.info(f"📥 Consultando webhook de {instance_name}")
+
+        try:
+            result = await self._make_request("GET", f"/webhook/{instance_name}")
+
+            logger.debug(f"🔍 Resposta webhook: {json.dumps(result, indent=2)}")
+
+            webhook_data = result.get("webhook", {})
+            return {
+                "status": result.get("status", "error"),
+                "webhook_url": webhook_data.get("url") or result.get("url"),
+                "events": webhook_data.get("events", [])
+            }
+
+        except EvolutionAPIError as e:
+            logger.error(f"❌ Erro ao consultar webhook {instance_name}: {e.message}")
+            raise
+
     async def set_webhook(self, instance_name: str, webhook_url: str, events: Optional[List[str]] = None) -> bool:
         """
         Configura webhook para receber eventos
