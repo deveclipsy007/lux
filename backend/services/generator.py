@@ -201,7 +201,7 @@ class CodeGeneratorService:
             "generation": {
                 "timestamp": datetime.now(),
                 "generator_version": "1.0.0",
-                "agno_version": "latest"
+                "agno_version": "v1.8.0"
             }
         }
         
@@ -256,8 +256,8 @@ class CodeGeneratorService:
         """Gera arquivo requirements.txt baseado nas ferramentas"""
         
         base_requirements = [
-            "agno>=1.0.0",
-            "fastapi>=0.104.0", 
+            "agno>=1.8.0",
+            "fastapi>=0.104.0",
             "uvicorn>=0.24.0",
             "pydantic>=2.0.0",
             "loguru>=0.7.0",
