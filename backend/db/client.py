@@ -1,10 +1,13 @@
 import asyncio
 import json
 import os
+import logging
 from typing import Any, Dict, Optional
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BRIDGE_SCRIPT = os.path.normpath(os.path.join(BASE_DIR, "..", "database", "bridge.ts"))
+
+logger = logging.getLogger(__name__)
 
 async def run(action: str, payload: Optional[Dict[str, Any]] = None) -> Any:
     """Execute Drizzle queries through the Node bridge."""
@@ -20,6 +23,8 @@ async def run(action: str, payload: Optional[Dict[str, Any]] = None) -> Any:
     )
     stdout, stderr = await proc.communicate()
     if proc.returncode != 0:
-        raise RuntimeError(f"Node bridge failed: {stderr.decode().strip()}")
+        err = stderr.decode().strip()
+        logger.error("Node bridge failed: %s", err)
+        raise RuntimeError(f"Node bridge failed: {err}")
     out = stdout.decode().strip()
     return json.loads(out) if out else None

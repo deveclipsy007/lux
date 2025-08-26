@@ -216,10 +216,14 @@ async def lifespan(app: FastAPI):
         logger.error(f"Falha ao executar migrações: {e}")
 
     # Inicializa repositórios
-    await agent_repo.init()
-    await event_repo.init()
-    agents = await agent_repo.list_agents()
-    logger.info(f"{len(agents)} agentes carregados do banco")
+    try:
+        await agent_repo.init()
+        await event_repo.init()
+        agents = await agent_repo.list_agents()
+        logger.info(f"{len(agents)} agentes carregados do banco")
+    except Exception as e:
+        logger.error(f"Falha na inicialização do banco de dados: {e}")
+        raise SystemExit(1)
     
     # Testa conectividade com serviços externos
     try:
