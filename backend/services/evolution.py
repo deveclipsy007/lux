@@ -291,9 +291,40 @@ class EvolutionService:
                 try:
                     status_info = await self.get_instance_status(instance_name)
                     logger.info(f"🔄 Instância {instance_name} já existente recuperada")
+
+                    state = status_info.get("state")
+                    if state == ConnectionState.ERROR:
+                        logger.warning(
+                            f"Instância {instance_name} em estado de erro. Tentando recriar."
+                        )
+                        await self.delete_instance(instance_name)
+                        response = await self._make_request(
+                            "POST", "/instance/create", data=payload
+                        )
+
+                        db_instance = await self.instance_repo.create(
+                            {
+                                "agentId": 1,
+                                "status": ConnectionState.DISCONNECTED.value,
+                                "qrCode": None,
+                                "phoneNumber": None,
+                            }
+                        )
+                        self._instance_ids[instance_name] = int(db_instance["id"])
+                        logger.info(
+                            f"✅ Instância {instance_name} recriada com sucesso"
+                        )
+                        return {
+                            "instance_id": instance_name,
+                            "status": "recreated",
+                            "webhook_url": webhook_url,
+                            "events": events,
+                            "api_response": response,
+                        }
+
                     return {
                         "instance_id": instance_name,
-                        "status": status_info.get("state", "unknown"),
+                        "status": state or "unknown",
                         "webhook_url": webhook_url,
                         "events": events,
                         "api_response": status_info,

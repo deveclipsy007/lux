@@ -1360,23 +1360,32 @@ const AgentManager = {
    * Cria instância WhatsApp na Evolution API
    */
   async createWhatsAppInstance(instanceName) {
-    try {
-      const data = await ApiClient.request('/api/wpp/instances', {
-        method: 'POST',
-        body: JSON.stringify({
-          instance_name: instanceName,
-          webhook_url: `${window.API_BASE}/api/wpp/webhook`,
-          events: ['messages.upsert', 'connection.update']
-        })
-      });
+    const maxAttempts = 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const data = await ApiClient.request('/api/wpp/instances', {
+          method: 'POST',
+          body: JSON.stringify({
+            instance_name: instanceName,
+            webhook_url: `${window.API_BASE}/api/wpp/webhook`,
+            events: ['messages.upsert', 'connection.update']
+          })
+        });
 
-      Logger.log('info', 'whatsapp', `Instância ${instanceName} criada com sucesso`);
-      return data;
+        Logger.log('info', 'whatsapp', `Instância ${instanceName} criada com sucesso`);
 
-    } catch (error) {
-      Logger.log('error', 'whatsapp', `Erro ao criar instância: ${error.message}`);
-      Toast.error('WhatsApp', 'Falha ao criar instância. Tente repetir a conexão.');
-      throw error;
+        if (data.status === 'recreated') {
+          Toast.info('WhatsApp', 'Instância existente corrigida.');
+        }
+
+        return data;
+      } catch (error) {
+        Logger.log('error', 'whatsapp', `Erro ao criar instância: ${error.message}`);
+        if (attempt === maxAttempts) {
+          Toast.error('WhatsApp', 'Falha ao criar instância. Tente repetir a conexão.');
+          throw error;
+        }
+      }
     }
   },
 
