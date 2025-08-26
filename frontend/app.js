@@ -55,10 +55,10 @@ const appState = {
   
   // Estado dos logs
   logs: [],
-  
-  // Estado de carregamento
-  loading: false,
-  
+
+  // Status de seções
+  status: {},
+
   // Arquivos gerados
   generatedFiles: []
 };
@@ -254,6 +254,16 @@ const StateManager = {
       tools: []
     };
     this.persistState();
+  },
+
+  /**
+   * Define status de uma seção da UI
+   */
+  setStatus(section, status) {
+    appState.status[section] = status;
+    window.dispatchEvent(new CustomEvent('statusChange', {
+      detail: { section, status }
+    }));
   }
 };
 
@@ -871,13 +881,16 @@ const AgentManager = {
    * Busca lista de agentes da API ou localStorage
    */
   async fetchAgents() {
+    StateManager.setStatus('agents', UIState.LOADING);
     try {
       const agents = await listAgents();
       StateManager.updateState('agents', agents);
+      StateManager.setStatus('agents', agents.length ? UIState.IDLE : UIState.EMPTY);
       this.offlineNotified = false;
     } catch (error) {
       const cached = Storage.load('agents', []);
       StateManager.updateState('agents', cached);
+      StateManager.setStatus('agents', UIState.ERROR);
       if (!this.offlineNotified) {
         Toast.warning('Modo Offline', 'Usando agentes salvos localmente');
         this.offlineNotified = true;
@@ -910,15 +923,25 @@ const AgentManager = {
   renderAgents() {
     const grid = document.getElementById('agents-grid');
     if (!grid) return;
+    const status = appState.status.agents || UIState.IDLE;
+
+    if (status === UIState.LOADING) {
+      grid.innerHTML = '<div class="loading-spinner"></div>';
+      return;
+    }
+
+    if (status === UIState.EMPTY) {
+      grid.innerHTML = '<div class="placeholder-message">Nenhum agente</div>';
+      return;
+    }
+
+    if (status === UIState.ERROR) {
+      grid.innerHTML = '<div class="error-message"><span class="error-icon">⚠️</span><p>Erro ao carregar agentes</p></div>';
+      return;
+    }
 
     const agents = appState.agents;
-
-    if (agents.length === 0) {
-      // Mostra exemplos mockados
-      grid.innerHTML = this.getMockAgents();
-    } else {
-      grid.innerHTML = agents.map(agent => this.renderAgentCard(agent)).join('');
-    }
+    grid.innerHTML = agents.map(agent => this.renderAgentCard(agent)).join('');
   },
 
   /**
@@ -1146,6 +1169,7 @@ const AgentManager = {
    * Conecta com WhatsApp via Evolution API
   */
   async connectWhatsApp(agentId) {
+    StateManager.setStatus('whatsapp', UIState.LOADING);
     try {
       const agent = appState.agents.find(a => a.id === agentId);
       if (!agent) {
@@ -1175,6 +1199,7 @@ const AgentManager = {
       const qrCode = await this.getQRCode(instanceName);
       
       if (qrCode) {
+        StateManager.setStatus('whatsapp', UIState.IDLE);
         qrDisplay.innerHTML = `
           <div class="qr-code-container">
             <img src="data:image/png;base64,${qrCode}" alt="QR Code WhatsApp" class="qr-code-image"/>
@@ -1193,8 +1218,9 @@ const AgentManager = {
       
     } catch (error) {
       Logger.log('error', 'whatsapp', `Erro ao conectar WhatsApp: ${error.message}`);
-      
+
       const qrDisplay = document.getElementById('qr-display');
+      StateManager.setStatus('whatsapp', UIState.ERROR);
       qrDisplay.innerHTML = `
         <div class="error-message">
           <span class="error-icon">❌</span>
@@ -1204,7 +1230,7 @@ const AgentManager = {
           </button>
         </div>
       `;
-      
+
       Toast.error('WhatsApp', `Erro: ${error.message}`);
     }
   },
@@ -1286,6 +1312,7 @@ const AgentManager = {
 
           if (state === 'open' || state === 'connected') {
             appState.evolutionAPI.connected = true;
+            StateManager.setStatus('whatsapp', UIState.IDLE);
             Toast.success('WhatsApp', 'WhatsApp conectado com sucesso!');
 
             // Configura webhook
@@ -1337,15 +1364,18 @@ const AgentManager = {
           if (statusElement) {
             statusElement.textContent = 'Timeout - QR Code expirado';
           }
+          StateManager.setStatus('whatsapp', UIState.ERROR);
           Toast.warning('WhatsApp', 'QR Code expirado. Tente novamente.');
         }
 
       } catch (error) {
+        StateManager.setStatus('whatsapp', UIState.ERROR);
         Logger.log('error', 'whatsapp', `Erro ao verificar status: ${error.message}`);
       }
     };
 
     // Inicia monitoramento
+    StateManager.setStatus('whatsapp', UIState.LOADING);
     setTimeout(checkStatus, 5000); // Primeira verificação em 5s
   },
 
@@ -1822,22 +1852,23 @@ const CodeGenerator = {
    */
   async generateCode() {
     const data = appState.agentDraft;
-    
+
+    StateManager.setStatus('code', UIState.LOADING);
     try {
-      appState.loading = true;
       this.updateButtonStates(true);
-      
+
       // Simula chamada à API (pode implementar real mais tarde)
       await this.simulateCodeGeneration(data);
-      
+
+      StateManager.setStatus('code', UIState.IDLE);
       Toast.success('Código Gerado', 'Arquivos do agente criados com sucesso');
       Logger.log('info', 'frontend', 'Código do agente gerado com sucesso');
-      
+
     } catch (error) {
+      StateManager.setStatus('code', UIState.ERROR);
       Toast.error('Erro na Geração', error.message);
       Logger.log('error', 'frontend', `Erro ao gerar código: ${error.message}`);
     } finally {
-      appState.loading = false;
       this.updateButtonStates(false);
     }
   },
@@ -2169,15 +2200,16 @@ class EvolutionService:
       return;
     }
 
+    StateManager.setStatus('materialize', UIState.LOADING);
     try {
-      appState.loading = true;
-      
+
       // Simula chamada à API
       await new Promise(resolve => setTimeout(resolve, 1500));
-      
+
+      StateManager.setStatus('materialize', UIState.IDLE);
       Toast.success('Materializado', 'Agente salvo no servidor com sucesso');
       Logger.log('info', 'frontend', 'Agente materializado no servidor');
-      
+
       // Adiciona à lista de agentes
       const newAgent = {
         id: Utils.generateId(),
@@ -2190,10 +2222,9 @@ class EvolutionService:
       StateManager.updateState('agents', updatedAgents);
 
     } catch (error) {
+      StateManager.setStatus('materialize', UIState.ERROR);
       Toast.error('Erro na Materialização', error.message);
       Logger.log('error', 'frontend', `Erro ao materializar agente: ${error.message}`);
-    } finally {
-      appState.loading = false;
     }
   },
 

@@ -14,4 +14,4 @@ dev:
 	sh scripts/start.sh
 
 e2e:
-	echo "e2e tests ok"
+	npx playwright test
