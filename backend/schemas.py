@@ -381,8 +381,9 @@ class AgentGeneratedFiles(BaseModel):
         }
 
 class InstanceState(BaseModel):
-    """Representa apenas o estado atual de uma instância"""
+    """Representa o resultado e o estado atual de uma instância"""
 
+    status: str = Field("success", description="Resultado da consulta")
     state: str = Field(..., description="Estado atual da conexão")
 
 class WppInstance(BaseModel):
