@@ -796,154 +796,7 @@ const Validator = {
   }
 };
 
-// Cliente da API
-const ApiClient = {
-  /**
-   * Retorna headers de autenticação
-   */
-  getAuthHeaders() {
-    const token = appState.apiToken || Storage.load('apiToken');
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
-  },
-
-  /**
-   * Verifica erros de autenticação
-   */
-  checkAuth(response) {
-    if (response.status === 401) {
-      Navigation.switchSection('page-settings');
-      Toast.warning('Autenticação Necessária', 'Informe seu token de acesso nas Configurações.');
-      throw new Error('Não autenticado');
-    }
-  },
-
-  /**
-   * Requisição base
-   */
-  async request(endpoint, options = {}) {
-    const url = `${window.API_BASE}${endpoint}`;
-    const config = {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.getAuthHeaders(),
-        ...(options.headers || {})
-      }
-    };
-
-    try {
-      Logger.log('info', 'api', `${config.method || 'GET'} ${endpoint}`);
-
-      const response = await fetch(url, config);
-      this.checkAuth(response);
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(data.detail || `HTTP ${response.status}`);
-      }
-
-      Logger.log('info', 'api', `Sucesso: ${endpoint}`);
-      return data;
-    } catch (error) {
-      Logger.log('error', 'api', `Erro em ${endpoint}: ${error.message}`);
-      throw error;
-    }
-  },
-
-  /**
-   * Gera código do agente
-   */
-  async generateAgent(agentData) {
-    return this.request('/api/agents/generate', {
-      method: 'POST',
-      body: JSON.stringify(agentData)
-    });
-  },
-
-  /**
-   * Materializa agente no servidor
-   */
-  async materializeAgent(agentData) {
-    return this.request('/api/agents/materialize', {
-      method: 'POST',
-      body: JSON.stringify(agentData)
-    });
-  },
-
-  /**
-   * Obtém dados de um agente específico
-   */
-  async getAgent(agentId) {
-    return this.request(`/api/agents/${agentId}`);
-  },
-
-  /**
-   * Atualiza agente existente
-   */
-  async updateAgent(agentId, agentData) {
-    return this.request(`/api/agents/${agentId}`, {
-      method: 'PUT',
-      body: JSON.stringify(agentData)
-    });
-  },
-
-  /**
-   * Remove agente existente
-   */
-  async deleteAgent(agentId) {
-    return this.request(`/api/agents/${agentId}`, {
-      method: 'DELETE'
-    });
-  },
-
-  /**
-   * Lista todos os agentes
-   */
-  async listAgents() {
-    return this.request('/api/agents');
-  },
-
-  /**
-   * Cria instância do WhatsApp
-   */
-  async createWhatsAppInstance(instanceData) {
-    return this.request('/api/wpp/instances', {
-      method: 'POST',
-      body: JSON.stringify(instanceData)
-    });
-  },
-
-  /**
-   * Obtém QR Code
-   */
-  async getQRCode(instanceId) {
-    return this.request(`/api/wpp/instances/${instanceId}/qr`);
-  },
-
-  /**
-   * Obtém status da instância
-   */
-  async getInstanceStatus(instanceId) {
-    return this.request(`/api/wpp/instances/${instanceId}/status`);
-  },
-
-  /**
-   * Envia mensagem de teste
-   */
-  async sendTestMessage(messageData) {
-    return this.request('/api/wpp/messages', {
-      method: 'POST',
-      body: JSON.stringify(messageData)
-    });
-  },
-
-  /**
-   * Testa conexão com API
-   */
-  async testConnection() {
-    return this.request('/api/health');
-  }
-};
+// Cliente da API movido para apiClient.js
 
 // Navegação entre seções
 const Navigation = {
@@ -1019,7 +872,7 @@ const AgentManager = {
    */
   async fetchAgents() {
     try {
-      const agents = await ApiClient.listAgents();
+      const agents = await listAgents();
       StateManager.updateState('agents', agents);
       this.offlineNotified = false;
     } catch (error) {
@@ -1169,7 +1022,7 @@ const AgentManager = {
    */
   async viewAgent(agentId) {
     try {
-      const agent = await ApiClient.getAgent(agentId);
+      const agent = await getAgent(agentId);
       this.currentAgentId = agentId;
 
       const nameInput = document.getElementById('detail-agent-name');
@@ -1276,7 +1129,7 @@ const AgentManager = {
         };
       }
 
-      const updatedAgent = await ApiClient.updateAgent(agentData.id, agentData);
+      const updatedAgent = await updateAgent(agentData.id, agentData);
       const agents = appState.agents.map(a => a.id === updatedAgent.id ? updatedAgent : a);
       StateManager.updateState('agents', agents);
       this.renderAgents();
@@ -1363,7 +1216,7 @@ const AgentManager = {
     const maxAttempts = 2;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        const data = await ApiClient.request('/api/wpp/instances', {
+        const data = await request('/api/wpp/instances', {
           method: 'POST',
           body: JSON.stringify({
             instance_name: instanceName,
@@ -1394,7 +1247,7 @@ const AgentManager = {
    */
   async getQRCode(instanceName) {
     try {
-      const { qr } = await ApiClient.request(`/api/wpp/instances/${instanceName}/qr`);
+      const { qr } = await request(`/api/wpp/instances/${instanceName}/qr`);
 
       if (qr) {
         return qr;
@@ -1419,9 +1272,9 @@ const AgentManager = {
     const checkStatus = async () => {
       try {
         const response = await fetch(`${window.API_BASE}/api/wpp/instances/${instanceName}/status`, {
-          headers: ApiClient.getAuthHeaders()
+          headers: getAuthHeaders()
         });
-        ApiClient.checkAuth(response);
+        checkAuth(response);
 
         if (response.ok) {
           const data = await response.json();
@@ -1441,9 +1294,9 @@ const AgentManager = {
             const safeName = encodeURIComponent(instanceName);
             try {
               const statusResponse = await fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/status`, {
-                headers: ApiClient.getAuthHeaders()
+                headers: getAuthHeaders()
               });
-              ApiClient.checkAuth(statusResponse);
+              checkAuth(statusResponse);
               const statusData = await statusResponse.json().catch(() => ({}));
               const statusOk = statusResponse.ok &&
                 statusData.status === 'success' &&
@@ -1454,9 +1307,9 @@ const AgentManager = {
               }
 
               const webhookResponse = await fetch(`${window.API_BASE}/api/wpp/instances/${safeName}/webhook`, {
-                headers: ApiClient.getAuthHeaders()
+                headers: getAuthHeaders()
               });
-              ApiClient.checkAuth(webhookResponse);
+              checkAuth(webhookResponse);
               const webhookData = await webhookResponse.json().catch(() => ({}));
               const webhookOk = webhookResponse.ok && webhookData.status === 'success';
               if (!webhookOk) {
@@ -1508,14 +1361,14 @@ const AgentManager = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...ApiClient.getAuthHeaders()
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           webhook_url: webhookUrl,
           events: ['messages.upsert', 'connection.update']
         })
       });
-      ApiClient.checkAuth(response);
+      checkAuth(response);
       const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.status === 'success') {
@@ -1576,7 +1429,7 @@ const AgentManager = {
     if (!confirmed) return;
 
     try {
-      await ApiClient.deleteAgent(agentId);
+      await deleteAgent(agentId);
       const updated = appState.agents.filter(a => a.id !== agentId);
       StateManager.updateState('agents', updated);
       this.renderAgents();
@@ -2737,13 +2590,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Exposição global para debugging (apenas em desenvolvimento)
 if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-  window.agnoApp = {
-    appState,
-    StateManager,
-    Logger,
-    Toast,
-    Modal,
-    ApiClient,
-    Utils
-  };
-}
+    window.agnoApp = {
+      appState,
+      StateManager,
+      Logger,
+      Toast,
+      Modal,
+      Utils,
+      api: {
+        request,
+        generateAgent,
+        materializeAgent,
+        getAgent,
+        updateAgent,
+        deleteAgent,
+        listAgents,
+        createWhatsAppInstance,
+        getQRCode,
+        getInstanceStatus,
+        sendTestMessage,
+        testConnection,
+        getAuthHeaders,
+        checkAuth
+      }
+    };
+  }
