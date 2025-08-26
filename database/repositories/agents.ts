@@ -2,9 +2,26 @@ import { eq, sql } from "drizzle-orm";
 import db from "../db";
 import { agents, Agent } from "../schema";
 
-export async function createAgent(data: typeof agents.$inferInsert): Promise<Agent> {
-  const [row] = await db.insert(agents).values(data).returning();
+export async function getAgentByName(name: string): Promise<Agent | undefined> {
+  const [row] = await db.select().from(agents).where(eq(agents.name, name));
   return row;
+}
+
+export async function createAgent(data: typeof agents.$inferInsert): Promise<Agent> {
+  const existing = await getAgentByName(data.name as string);
+  if (existing) {
+    return existing;
+  }
+  try {
+    const [row] = await db.insert(agents).values(data).returning();
+    return row;
+  } catch (error: any) {
+    if (error?.message?.includes("UNIQUE")) {
+      const current = await getAgentByName(data.name as string);
+      if (current) return current;
+    }
+    throw error;
+  }
 }
 
 export async function getAgentById(id: number): Promise<Agent | undefined> {
@@ -20,7 +37,7 @@ export async function initAgents(): Promise<void> {
   const query = sql`
     CREATE TABLE IF NOT EXISTS agents (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
+      name TEXT NOT NULL UNIQUE,
       specialization TEXT,
       instructions TEXT,
       status TEXT NOT NULL DEFAULT 'inactive',

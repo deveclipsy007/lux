@@ -17,6 +17,8 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, validator, root_validator, HttpUrl, EmailStr
 import re
+import asyncio
+from db.agent_repository import AgentRepository
 
 # ENUMS E CONSTANTES
 
@@ -134,7 +136,19 @@ class AgentCreate(BaseModel):
         reserved_names = ['admin', 'api', 'system', 'test', 'default']
         if v.lower() in reserved_names:
             raise ValueError(f'Nome "{v}" é reservado pelo sistema')
-            
+
+        repo = AgentRepository()
+        existing = None
+        try:
+            existing = asyncio.run(repo.get_agent_by_name(v))
+        except RuntimeError:
+            existing = asyncio.get_event_loop().run_until_complete(
+                repo.get_agent_by_name(v)
+            )
+        except Exception:
+            existing = None
+        if existing:
+            raise ValueError('Nome já cadastrado')
         return v
     
     @validator('tools')

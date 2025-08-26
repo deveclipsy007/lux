@@ -30,8 +30,21 @@ class AgentRepository:
         row = await run_query("get", {"id": int(agent_id)})
         return self._row_to_agent(row) if row else None
 
+    async def get_agent_by_name(self, name: str) -> Optional[Agent]:
+        row = await run_query("get_by_name", {"name": name})
+        return self._row_to_agent(row) if row else None
+
     async def create_agent(self, data: Dict[str, Any]) -> Agent:
-        row = await run_query("create", data)
+        try:
+            row = await run_query("create", data)
+        except RuntimeError as exc:
+            if "UNIQUE" in str(exc):
+                existing = await self.get_agent_by_name(data["name"])
+                if existing:
+                    existing.tools = list(data.get("tools", []))
+                    existing.config = data.get("config", {})
+                    return existing
+            raise
         agent = self._row_to_agent(row)
         agent.tools = list(data.get("tools", []))
         agent.config = data.get("config", {})
