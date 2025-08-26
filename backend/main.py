@@ -52,7 +52,13 @@ from services.generator import CodeGeneratorService
 from services.evolution import EvolutionService
 from services.agno import AgnoService
 from models import SystemEvent, EventType, app_store
-from db import AgentRepository, EventRepo
+from db import (
+    AgentRepository,
+    EventRepo,
+    InstanceRepo,
+    MessageRepo,
+    ConversationRepo,
+)
 
 # WebSocket imports (bypassing problematic modules)
 try:
@@ -105,6 +111,9 @@ settings = Settings()
 # Repositórios com persistência em banco de dados
 agent_repo = AgentRepository()
 event_repo = EventRepo()
+instance_repo = InstanceRepo()
+message_repo = MessageRepo()
+conversation_repo = ConversationRepo()
 
 
 async def log_event(event_type: EventType, agent_id: str, data: Dict[str, Any]) -> None:
@@ -800,7 +809,8 @@ async def process_incoming_message(instance_id: str, webhook_data: Dict[str, Any
             if message.get("key", {}).get("fromMe", False):
                 continue
                 
-            from_number = message.get("key", {}).get("remoteJid", "").replace("@s.whatsapp.net", "")
+            chat_id_raw = message.get("key", {}).get("remoteJid", "")
+            from_number = chat_id_raw.replace("@s.whatsapp.net", "")
             message_text = message.get("message", {}).get("conversation", "")
             message_id = message.get("key", {}).get("id", "")
             
@@ -817,7 +827,11 @@ async def process_incoming_message(instance_id: str, webhook_data: Dict[str, Any
                 # Por enquanto, apenas loga a mensagem recebida
                 background_tasks.add_task(
                     log_received_message,
-                    instance_id, from_number, message_text, message_id
+                    instance_id,
+                    chat_id_raw,
+                    from_number,
+                    message_text,
+                    message_id,
                 )
                 
     except Exception as e:
@@ -839,14 +853,47 @@ async def process_connection_update(instance_id: str, webhook_data: Dict[str, An
     except Exception as e:
         logger.error(f"❌ Erro ao processar atualização de conexão: {str(e)}")
 
-async def log_received_message(instance_id: str, from_number: str, message_text: str, message_id: str):
-    """
-    Registra mensagem recebida nos logs
-    """
+async def log_received_message(
+    instance_id: str,
+    chat_id: str,
+    from_number: str,
+    message_text: str,
+    message_id: str,
+) -> None:
+    """Registra mensagem recebida nos logs e persiste no banco."""
     logger.info(f"💬 [{instance_id}] {from_number}: {message_text}")
-    
-    # Em uma implementação completa, aqui seria:
-    # 1. Salvos no banco de dados
+
+    try:
+        db_instance_id = int(instance_id)
+    except ValueError:
+        db_instance_id = None
+
+    if db_instance_id is not None:
+        try:
+            existing = await conversation_repo.get(chat_id)
+            if not existing:
+                await conversation_repo.create(
+                    {
+                        "chatId": chat_id,
+                        "instanceId": db_instance_id,
+                        "agentId": 1,
+                        "contactNumber": from_number,
+                    }
+                )
+
+            await message_repo.create(
+                {
+                    "instanceId": db_instance_id,
+                    "agentId": 1,
+                    "fromNumber": from_number,
+                    "toNumber": None,
+                    "content": message_text,
+                }
+            )
+        except Exception as e:
+            logger.error(f"Erro ao persistir mensagem: {e}")
+
+    # Em uma implementação completa, aqui seria também:
     # 2. Processado pelo agente Agno
     # 3. Gerada resposta automática se configurado
 

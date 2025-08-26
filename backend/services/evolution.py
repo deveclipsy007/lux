@@ -38,6 +38,7 @@ except ImportError:
 from models import Message, ConnectionState, MessageType
 from backend.db.instance_repo import InstanceRepo
 from backend.db.message_repo import MessageRepo
+from backend.db.conversation_repo import ConversationRepo
 
 class EvolutionAPIError(Exception):
     """Exceção personalizada para erros da Evolution API"""
@@ -69,6 +70,7 @@ class EvolutionService:
         # Repositories
         self.instance_repo = InstanceRepo()
         self.message_repo = MessageRepo()
+        self.conversation_repo = ConversationRepo()
         
         # Callbacks para eventos
         self._message_callbacks: List[Callable] = []
@@ -554,6 +556,18 @@ class EvolutionService:
             
             instance_id = self._instance_ids.get(instance_name)
             if instance_id:
+                chat_id = f"{to}@s.whatsapp.net"
+                existing = await self.conversation_repo.get(chat_id)
+                if not existing:
+                    await self.conversation_repo.create(
+                        {
+                            "chatId": chat_id,
+                            "instanceId": instance_id,
+                            "agentId": 1,
+                            "contactNumber": to,
+                        }
+                    )
+
                 await self.message_repo.create(
                     {
                         "instanceId": instance_id,
