@@ -1489,6 +1489,12 @@ body {
   color: var(--error);
 }
 
+.placeholder-message {
+  text-align: center;
+  padding: var(--space-lg);
+  color: var(--text-secondary);
+}
+
 .error-icon {
   font-size: 48px;
   display: block;
