@@ -388,7 +388,11 @@ class WppInstance(BaseModel):
         WhatsAppInstanceStatus.UNKNOWN,
         description="Status atual da conexão"
     )
-    qr_code: Optional[str] = Field(None, description="QR Code em base64 (se disponível)")
+    qr_code: Optional[str] = Field(
+        None,
+        alias="qr",
+        description="QR Code em base64 (se disponível)"
+    )
     phone_number: Optional[str] = Field(None, description="Número conectado")
     profile_name: Optional[str] = Field(None, description="Nome do perfil WhatsApp")
     webhook_url: Optional[str] = Field(None, description="URL do webhook configurado")

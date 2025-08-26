@@ -621,7 +621,7 @@ async def get_qr_code(
         logger.info(f"✅ QR Code obtido para {instance_id}")
         
         return {
-            "qr": result["qr"],
+            "qr_code": result["qr"],
             "status": result.get("status", "QR_AVAILABLE"),
             "expires_at": result.get("expires_at")
         }

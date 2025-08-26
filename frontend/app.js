@@ -1386,10 +1386,10 @@ const AgentManager = {
    */
   async getQRCode(instanceName) {
     try {
-      const data = await ApiClient.request(`/api/wpp/instances/${instanceName}/qr`);
+      const { qr } = await ApiClient.request(`/api/wpp/instances/${instanceName}/qr`);
 
-      if (data.qr) {
-        return data.qr;
+      if (qr) {
+        return qr;
       } else {
         throw new Error('QR Code não disponível');
       }
