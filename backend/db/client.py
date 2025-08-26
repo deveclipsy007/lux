@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 from typing import Any, Dict, Optional
+from loguru import logger
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BRIDGE_SCRIPT = os.path.normpath(os.path.join(BASE_DIR, "..", "database", "bridge.ts"))
@@ -19,7 +20,13 @@ async def run(action: str, payload: Optional[Dict[str, Any]] = None) -> Any:
         env=env,
     )
     stdout, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        raise RuntimeError(f"Node bridge failed: {stderr.decode().strip()}")
+    error_msg = ""
+    try:
+        if proc.returncode != 0:
+            error_msg = stderr.decode().strip()
+            raise RuntimeError(error_msg)
+    except RuntimeError:
+        logger.error(f"Node bridge failed: {error_msg}")
+        raise
     out = stdout.decode().strip()
     return json.loads(out) if out else None
