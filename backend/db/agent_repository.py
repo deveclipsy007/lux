@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
+from ..context import get_correlation_id
 
 from models import Agent, AgentStatus
 from .client import run as run_query
@@ -16,7 +17,9 @@ class AgentRepository:
         try:
             await run_query("init")
         except Exception as exc:
-            logger.error(f"Failed to initialise database: {exc}")
+            logger.bind(correlation_id=get_correlation_id()).error(
+                f"Failed to initialise database: {exc}"
+            )
             raise
 
     async def list_agents(self) -> List[Agent]:

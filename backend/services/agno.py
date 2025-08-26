@@ -23,6 +23,12 @@ from pathlib import Path
 from enum import Enum
 
 from loguru import logger
+from ..context import get_correlation_id
+
+
+def _log():
+    """Return logger bound with current correlation id."""
+    return logger.bind(correlation_id=get_correlation_id())
 try:
     from pydantic_settings import BaseSettings
 except ImportError:
@@ -44,7 +50,9 @@ class AgnoService:
         self._templates_cache: Dict[str, Any] = {}
         self._tool_configs: Dict[str, Any] = {}
         
-        logger.info(f"🤖 AgnoService inicializado - Provider: {self.model_provider}, Model: {self.model_name}")
+        _log().info(
+            f"🤖 AgnoService inicializado - Provider: {self.model_provider}, Model: {self.model_name}"
+        )
     
     # TEMPLATES DE INSTRUÇÕES POR ESPECIALIZAÇÃO
     
@@ -414,7 +422,9 @@ class {class_name}(BaseAgent):
         # Configuração das ferramentas
         self._setup_tools()
         
-        logger.info(f"🤖 Agente {self.config.name} inicializado - {self.specialization}")
+        _log().info(
+            f"🤖 Agente {self.config.name} inicializado - {self.specialization}"
+        )
     
     def _load_specialization_template(self, agent_data: AgentCreate) -> Dict[str, Any]:
         """Carrega template da especialização"""
@@ -437,7 +447,7 @@ class {class_name}(BaseAgent):
             Resposta do agente
         """
         try:
-            logger.debug(f"Processando mensagem: {{message[:100]}}...")
+            _log().debug(f"Processando mensagem: {{message[:100]}}...")
             
             # Enriquece contexto com dados da especialização
             enriched_context = self._enrich_context(context or {{}})
@@ -448,11 +458,11 @@ class {class_name}(BaseAgent):
             # Pós-processamento
             final_response = await self._post_process_response(response, enriched_context)
             
-            logger.info("✅ Mensagem processada com sucesso")
+            _log().info("✅ Mensagem processada com sucesso")
             return final_response
             
         except Exception as e:
-            logger.error(f"❌ Erro ao processar mensagem: {{e}}")
+            _log().error(f"❌ Erro ao processar mensagem: {{e}}")
             return self._get_error_response(str(e))
     
     async def _process_by_specialization(self, message: str, context: Dict[str, Any]) -> str:
