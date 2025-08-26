@@ -380,13 +380,18 @@ class AgentGeneratedFiles(BaseModel):
             }
         }
 
+class InstanceState(BaseModel):
+    """Representa apenas o estado atual de uma instância"""
+
+    state: str = Field(..., description="Estado atual da conexão")
+
 class WppInstance(BaseModel):
     """Dados de uma instância WhatsApp"""
     
     instance_id: str = Field(..., description="ID único da instância")
-    status: WhatsAppInstanceStatus = Field(
+    state: WhatsAppInstanceStatus = Field(
         WhatsAppInstanceStatus.UNKNOWN,
-        description="Status atual da conexão"
+        description="Estado atual da conexão"
     )
     qr_code: Optional[str] = Field(
         None,
@@ -404,7 +409,7 @@ class WppInstance(BaseModel):
         schema_extra = {
             "example": {
                 "instance_id": "agno-agent",
-                "status": "CONNECTED",
+                "state": "CONNECTED",
                 "phone_number": "5511999999999", 
                 "profile_name": "Meu Agente",
                 "created_at": "2025-01-24T10:00:00Z"

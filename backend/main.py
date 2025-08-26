@@ -41,7 +41,7 @@ from loguru import logger
 from schemas import (
     AgentCreate,
     AgentGeneratedFiles,
-    WppInstance,
+    InstanceState,
     SendMessage,
     HealthResponse,
     LogEntry,
@@ -556,7 +556,7 @@ async def materialize_agent(
 
 # ENDPOINTS DE WHATSAPP (EVOLUTION API)
 
-@app.post("/api/wpp/instances", response_model=WppInstance)
+@app.post("/api/wpp/instances", response_model=InstanceState)
 async def create_whatsapp_instance(
     instance_data: Dict[str, str],
     evolution_service: EvolutionService = Depends(get_evolution_service)
@@ -568,7 +568,7 @@ async def create_whatsapp_instance(
         instance_data: Dados da instância (ex: {"instance_name": "my-agent"})
         
     Returns:
-        WppInstance: Dados da instância criada
+        InstanceState: Estado da instância criada
     """
     
     instance_name = (instance_data.get("instance_name") or "").strip()
@@ -580,15 +580,10 @@ async def create_whatsapp_instance(
     
     try:
         result = await evolution_service.create_instance(instance_name)
-        
+
         logger.info(f"✅ Instância {instance_name} criada/recuperada")
-        
-        return WppInstance(
-            instance_id=instance_name,
-            status=result.get("status", "UNKNOWN"),
-            qr_code=result.get("qr_code"),
-            webhook_url=result.get("webhook_url")
-        )
+
+        return {"state": result.get("status", "UNKNOWN")}
         
     except Exception as e:
         logger.error(f"❌ Erro ao criar instância {instance_name}: {str(e)}")
@@ -640,7 +635,7 @@ async def get_qr_code(
             detail=f"Erro ao obter QR Code: {str(e)}"
         )
 
-@app.get("/api/wpp/instances/{instance_id}/status", response_model=WppInstance)
+@app.get("/api/wpp/instances/{instance_id}/status", response_model=InstanceState)
 async def get_instance_status(
     instance_id: str,
     evolution_service: EvolutionService = Depends(get_evolution_service)
@@ -652,20 +647,17 @@ async def get_instance_status(
         instance_id: ID da instância
         
     Returns:
-        WppInstance: Status atual da instância
+        InstanceState: Estado atual da instância
     """
     
     logger.debug(f"📊 Consultando status da instância: {instance_id}")
     
     try:
         status_info = await evolution_service.get_instance_status(instance_id)
-        
-        return WppInstance(
-            instance_id=instance_id,
-            status=status_info.get("state", "UNKNOWN"),
-            phone_number=status_info.get("phone_number"),
-            profile_name=status_info.get("profile_name")
-        )
+        state = status_info.get("state", "UNKNOWN")
+        state = state.value if hasattr(state, "value") else state
+
+        return {"state": state}
         
     except Exception as e:
         logger.error(f"❌ Erro ao consultar status {instance_id}: {str(e)}")
